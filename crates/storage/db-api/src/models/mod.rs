@@ -6,10 +6,11 @@ use crate::{
 };
 use alloy_consensus::Header;
 use alloy_genesis::GenesisAccount;
-use alloy_primitives::{Address, Bytes, Log, B256, U256};
+use alloy_primitives::{Address, Bytes, Log, B256, B512, U256};
 use reth_codecs::{add_arbitrary_tests, Compact};
+use reth_db_models::{HeaderWithPegs, Snapshot, SnapshotChunk, SnapshotSync, WalletStateSyncRecord};
 use reth_ethereum_primitives::{Receipt, TransactionSigned, TxType};
-use reth_primitives_traits::{Account, Bytecode, StorageEntry};
+use reth_primitives_traits::{Account, Bytecode, SealedHeader, StorageEntry};
 use reth_prune_types::{PruneCheckpoint, PruneSegment};
 use reth_stages_types::StageCheckpoint;
 use reth_trie_common::{StoredNibbles, StoredNibblesSubKey, *};
@@ -98,6 +99,20 @@ impl Encode for B256 {
 }
 
 impl Decode for B256 {
+    fn decode(value: &[u8]) -> Result<Self, DatabaseError> {
+        Ok(Self::new(value.try_into().map_err(|_| DatabaseError::Decode)?))
+    }
+}
+
+impl Encode for B512 {
+    type Encoded = [u8; 64];
+
+    fn encode(self) -> Self::Encoded {
+        self.0
+    }
+}
+
+impl Decode for B512 {
     fn decode(value: &[u8]) -> Result<Self, DatabaseError> {
         Ok(Self::new(value.try_into().map_err(|_| DatabaseError::Decode)?))
     }
@@ -234,7 +249,14 @@ impl_compression_for_compact!(
     PruneCheckpoint,
     ClientVersion,
     // Non-DB
-    GenesisAccount
+    GenesisAccount,
+    // Botanix
+    // SealedHeader,
+    Snapshot,
+    SnapshotChunk,
+    SnapshotSync,
+    HeaderWithPegs,
+    WalletStateSyncRecord
 );
 
 #[cfg(feature = "op")]

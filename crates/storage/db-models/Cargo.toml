@@ -30,6 +30,12 @@ bytes = { workspace = true, optional = true }
 # arbitrary utils
 arbitrary = { workspace = true, features = ["derive"], optional = true }
 
+uuid = { version = "1.8.0", features = ["v4"] }
+
+# crypto
+sha2.workspace = true
+sha2.features = ["std"]
+
 [dev-dependencies]
 # reth
 reth-primitives-traits = { workspace = true, features = ["arbitrary", "reth-codec"] }

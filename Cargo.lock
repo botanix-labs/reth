@@ -7561,7 +7561,9 @@ dependencies = [
  "reth-codecs",
  "reth-primitives-traits",
  "serde",
+ "sha2 0.10.9",
  "test-fuzz",
+ "uuid",
 ]
 
 [[package]]

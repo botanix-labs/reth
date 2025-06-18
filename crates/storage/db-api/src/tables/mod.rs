@@ -15,6 +15,7 @@ pub mod codecs;
 
 mod raw;
 pub use raw::{RawDupSort, RawKey, RawTable, RawValue, TableRawRow};
+use reth_db_models::{SnapshotChunk, SnapshotId, Snapshot, PeerID, WalletStateSyncRecord, HeaderWithPegs, ChunkId, SnapshotSyncId, SnapshotSync};
 
 use crate::{
     models::{
@@ -522,6 +523,49 @@ tables! {
     table ChainState {
         type Key = ChainStateKey;
         type Value = BlockNumber;
+    }
+
+    /// Store snapshot id to snapshot data.
+    table Snapshots {
+        type Key = SnapshotId;
+        type Value = Snapshot;
+    }
+
+    /// Store wallet state sync record id to wallet state sync data.
+    table WalletStateSyncs { 
+        type Key = PeerID;
+        type Value = WalletStateSyncRecord;
+    }
+
+    /// Store staged headers, used to persist pegins and pegouts after
+    /// finalizing a block.
+    table StagedHeader { 
+        type Key = B256;
+        type Value = HeaderWithPegs;
+    }
+
+    /// Store chunk id to chunk data.
+    table Chunks { 
+        type Key = ChunkId;
+        type Value = SnapshotChunk;
+    }
+
+    /// Stores block number to snapshot id.
+    table BlockSnapshots{
+        type Key = BlockNumber;
+        type Value = SnapshotId;
+    }
+
+    /// Stores the chunk to Block ids
+    table ChunkBlocks {
+        type Key = ChunkId;
+        type Value = BlockNumber;
+    }
+
+    /// Table used when syncing snapshots.
+    table SnapshotSyncs {
+        type Key = SnapshotSyncId;
+        type Value = SnapshotSync;
     }
 }
 

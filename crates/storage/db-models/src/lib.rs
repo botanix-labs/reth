@@ -22,3 +22,19 @@ pub use blocks::{StaticFileBlockWithdrawals, StoredBlockBodyIndices, StoredBlock
 /// Client Version
 pub mod client_version;
 pub use client_version::ClientVersion;
+
+// Activation Manager
+pub mod activation_manager;
+pub use activation_manager::*;
+
+// Wallet Sync
+pub mod wallet_sync;
+pub use wallet_sync::*;
+
+// Chunks
+pub mod chunks;
+pub use chunks::*;
+
+// Staged Header
+pub mod staged_header;
+pub use staged_header::*;
