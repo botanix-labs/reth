@@ -6,7 +6,7 @@ use crate::{
 };
 use alloy_consensus::Header;
 use alloy_genesis::GenesisAccount;
-use alloy_primitives::{Address, Bytes, Log, B256, U256};
+use alloy_primitives::{Address, Bytes, Log, B256, B512, U256};
 use reth_codecs::{add_arbitrary_tests, Compact};
 use reth_ethereum_primitives::{Receipt, TransactionSigned, TxType};
 use reth_primitives_traits::{Account, Bytecode, StorageEntry};
@@ -98,6 +98,20 @@ impl Encode for B256 {
 }
 
 impl Decode for B256 {
+    fn decode(value: &[u8]) -> Result<Self, DatabaseError> {
+        Ok(Self::new(value.try_into().map_err(|_| DatabaseError::Decode)?))
+    }
+}
+
+impl Encode for B512 {
+    type Encoded = [u8; 64];
+
+    fn encode(self) -> Self::Encoded {
+        self.0
+    }
+}
+
+impl Decode for B512 {
     fn decode(value: &[u8]) -> Result<Self, DatabaseError> {
         Ok(Self::new(value.try_into().map_err(|_| DatabaseError::Decode)?))
     }
