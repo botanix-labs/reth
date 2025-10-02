@@ -7524,6 +7524,7 @@ dependencies = [
  "auto_impl",
  "reth-execution-types",
  "reth-primitives-traits",
+ "reth-storage-errors",
  "thiserror 2.0.12",
 ]
 

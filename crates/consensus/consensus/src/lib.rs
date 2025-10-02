@@ -21,6 +21,7 @@ use reth_primitives_traits::{
     Block, GotExpected, GotExpectedBoxed, NodePrimitives, RecoveredBlock, SealedBlock,
     SealedHeader,
 };
+use reth_storage_errors::provider::ProviderError;
 
 /// A consensus implementation that does nothing.
 pub mod noop;
@@ -121,6 +122,20 @@ pub trait HeaderValidator<H = Header>: Debug + Send + Sync {
         }
         Ok(())
     }
+}
+
+/// Invalid Aggregated Public Key Error
+#[derive(Debug, PartialEq, Eq, Clone, thiserror::Error)]
+pub enum InvalidAggregatedPublicKeyError {
+    /// Aggregated public key does not match expected key
+    #[error("Aggregated public key does not match expected key")]
+    InvalidAggregatedPublicKey,
+    /// Aggregated public key is missing
+    #[error("Aggregated public key is missing")]
+    MissingAggregatedPublicKey,
+    /// Aggregated public key should not be NUMS point past genesis block
+    #[error("Aggregated public key should not be NUMS point past genesis block")]
+    NumsAggregatePublicKeyPastGenesis,
 }
 
 /// Consensus Errors
@@ -375,6 +390,21 @@ pub enum ConsensusError {
     #[error(transparent)]
     InvalidTransaction(InvalidTransactionError),
 
+    /// Error type transparently wrapping HeaderValidationError.
+    // #[display("failed to validate header: {_0}")]
+    // HeaderValidationError(HeaderValidationError),
+    /// Inturn Validation Error
+    #[error("in turn validation error")]
+    ValidateInturnError,
+
+    /// Invalid Aggregated Public key
+    #[error("invalid aggregated public key: {_0}")]
+    InvalidAggregatedPublicKey(InvalidAggregatedPublicKeyError),
+
+    /// Invalid Chain Version
+    #[error("invalid chain version")]
+    InvalidChainVersion,
+
     /// Error when the block's base fee is different from the expected base fee.
     #[error("block base fee mismatch: {0}")]
     BaseFeeDiff(GotExpected<u64>),
@@ -431,6 +461,26 @@ pub enum ConsensusError {
         /// The child gas limit.
         child_gas_limit: u64,
     },
+
+    /// Cannot add and existing federation member to the federation
+    #[error("Cannot add and existing federation member to the federation")]
+    CannotAddExistingFederationMember,
+
+    /// Error deserializing extra data header.
+    #[error("error deserializing extra data header")]
+    NonDeterministicDataDeserialize,
+
+    /// Error since the latest header is missing.
+    #[error("missing latest header")]
+    LatestHeaderMissing,
+
+    /// Error since the bitcoin checkpoint is missing.
+    #[error("missing latest header")]
+    MissingBitcoinCheckpoint,
+
+    /// Error since the block fee recipient fee is missing.
+    #[error("missing block fee recipient address")]
+    MissingBlockFeeRecipientAddress,
 
     /// Error when the block timestamp is in the past compared to the parent timestamp.
     #[error(
