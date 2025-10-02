@@ -21,7 +21,6 @@ use reth_primitives_traits::{
     Block, GotExpected, GotExpectedBoxed, NodePrimitives, RecoveredBlock, SealedBlock,
     SealedHeader,
 };
-use reth_storage_errors::provider::ProviderError;
 
 /// A consensus implementation that does nothing.
 pub mod noop;

@@ -73,6 +73,12 @@ derive_more.workspace = true
 schnellru.workspace = true
 itertools.workspace = true
 smallvec.workspace = true
+uuid.workspace = true
+
+frost-secp256k1-tr = { git = "https://github.com/botanix-labs/frost", rev = "b4c5ab017bb0d182f3c56fd80b95d6375a4bfeea", features = [
+    "serde",
+    "serialization",
+]}
 
 [dev-dependencies]
 # reth

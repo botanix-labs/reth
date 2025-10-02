@@ -125,6 +125,7 @@ pub mod cache;
 pub mod config;
 pub mod error;
 pub mod eth_requests;
+pub mod frost;
 pub mod import;
 pub mod message;
 pub mod peers;

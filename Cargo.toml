@@ -573,6 +573,7 @@ mini-moka = "0.10"
 tar-no-std = { version = "0.3.2", default-features = false }
 miniz_oxide = { version = "0.8.4", default-features = false }
 chrono = "0.4.41"
+uuid = { version = "1.8.0", features = ["v4"] }
 
 # metrics
 metrics = "0.24.0"

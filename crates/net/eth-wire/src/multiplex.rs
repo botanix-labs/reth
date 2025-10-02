@@ -393,6 +393,14 @@ impl Stream for ProtocolConnection {
     }
 }
 
+// NOTE: This primarily exists for testing purposes in
+// `crates/net/network/src/frost/protocol.rs`
+impl From<UnboundedReceiverStream<BytesMut>> for ProtocolConnection {
+    fn from(from_wire: UnboundedReceiverStream<BytesMut>) -> Self {
+        Self { from_wire }
+    }
+}
+
 /// A Stream and Sink type that acts as a wrapper around a primary `RLPx` subprotocol (e.g. "eth")
 /// [`EthStream`] and can also handle additional subprotocols.
 #[derive(Debug)]
