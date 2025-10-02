@@ -143,6 +143,42 @@ pub enum ConsensusError {
         gas_limit: u64,
     },
 
+    /// `PoA` specific: missing quorum of authority signatures
+    #[error("Missing quorum of authority signatures, expected: {expected}, got: {actual}")]
+    MissingQuorumOfAuthoritySignatures {
+        /// The expected quorum of authority signatures.
+        expected: u16,
+        /// The actual quorum of authority signatures.
+        actual: u16,
+    },
+    /// `PoA` specific: authority list is missing in the extra data header
+    #[error("Missing authority list")]
+    MissingAuthorityList,
+    /// `PoA` specific: authority list does not match the genesis block authority list
+    #[error("Invalid authority list")]
+    InvalidAuthorityList,
+    /// `PoA` specific: Invalid block signature
+    #[error("Invalid authority signature")]
+    InvalidAuthoritySignature,
+    /// `PoA` specific: extra data header does not follow consensus rules or is malformed
+    #[error("Invalid extra data")]
+    ExtraDataInvalid,
+    /// `PoA` specific: failed to recover authority from block signature
+    #[error("Failed to recover authority")]
+    FailedToRecoverAuthority,
+    /// `PoA` specific: same signer as previous block
+    #[error("Same signer as previous block")]
+    SignerLimitExceeded,
+    /// `PoA` specific: authority signer not in turn
+    #[error("Authority signer not in turn")]
+    AuthorityNotInTurn,
+    /// `PoA` specific: block beneficiary is not an authority
+    #[error("block beneficiary is not an authority")]
+    BlockBeneficiaryIsNotAuthority,
+    /// `PoA` specific: block beneficiary is not the burn address
+    #[error("block beneficiary is not the burn address")]
+    BlockBeneficiaryIsNotBurnAddress,
+
     /// Error when block gas used doesn't match expected value
     #[error("block gas used mismatch: {gas}; gas spent by each transaction: {gas_spent_by_tx:?}")]
     BlockGasUsed {
@@ -239,6 +275,17 @@ pub enum ConsensusError {
         /// The length of the extra data.
         len: usize,
     },
+
+    /// Error when the extra data header length exceeds the maximum allowed.
+    #[error("extra data header {len} exceeds max length")]
+    ExtraDataHeaderExceedsMax {
+        /// The length of the extra header data.
+        len: usize,
+    },
+
+    /// Consensus error during PBFT
+    #[error("PBFT Consensus error")]
+    PBFTConsensusError,
 
     /// Error when the difficulty after a merge is not zero.
     #[error("difficulty after merge is not zero")]
