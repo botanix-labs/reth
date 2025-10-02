@@ -187,7 +187,7 @@ where
             while let Poll::Ready(Some(notification)) = this.events.poll_next_unpin(cx) {
                 {
                     match notification {
-                        CanonStateNotification::Commit { new } => {
+                        CanonStateNotification::Commit { new, .. } => {
                             for (_, block) in new.blocks().iter() {
                                 this.process_block(block);
                             }

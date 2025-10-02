@@ -423,7 +423,7 @@ pub async fn maintain_transaction_pool<N, Client, P, St, Tasks>(
                 // keep track of new mined blob transactions
                 blob_store_tracker.add_new_chain_blocks(&new_blocks);
             }
-            CanonStateNotification::Commit { new } => {
+            CanonStateNotification::Commit { new, .. } => {
                 let (blocks, state) = new.inner();
                 let tip = blocks.tip();
                 let chain_spec = client.chain_spec();

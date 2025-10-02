@@ -1,6 +1,7 @@
 //! Canonical chain state notification trait and types.
 
 use alloy_eips::eip2718::Encodable2718;
+use alloy_primitives::Bytes;
 use derive_more::{Deref, DerefMut};
 use reth_execution_types::{BlockReceipts, Chain};
 use reth_primitives_traits::{NodePrimitives, RecoveredBlock, SealedHeader};
@@ -88,6 +89,10 @@ pub enum CanonStateNotification<N: NodePrimitives = reth_ethereum_primitives::Et
     Commit {
         /// The newly added chain segment.
         new: Arc<Chain<N>>,
+        /// Pegins
+        pegins: Option<Vec<Bytes>>,
+        /// Pegouts
+        pegouts: Option<Vec<Bytes>>,
     },
     /// A chain segment was reverted or reorged.
     ///
@@ -118,7 +123,7 @@ impl<N: NodePrimitives> CanonStateNotification<N> {
     /// Get the newly imported chain segment, if any.
     pub fn committed(&self) -> Arc<Chain<N>> {
         match self {
-            Self::Commit { new } | Self::Reorg { new, .. } => new.clone(),
+            Self::Commit { new, .. } | Self::Reorg { new, .. } => new.clone(),
         }
     }
 
@@ -128,7 +133,7 @@ impl<N: NodePrimitives> CanonStateNotification<N> {
     /// 1 new block.
     pub fn tip(&self) -> &RecoveredBlock<N::Block> {
         match self {
-            Self::Commit { new } | Self::Reorg { new, .. } => new.tip(),
+            Self::Commit { new, .. } | Self::Reorg { new, .. } => new.tip(),
         }
     }
 
@@ -244,7 +249,7 @@ mod tests {
         ));
 
         // Create a commit notification
-        let notification = CanonStateNotification::Commit { new: chain.clone() };
+        let notification = CanonStateNotification::Commit { new: chain.clone(), pegins: None, pegouts: None };
 
         // Test that `committed` returns the correct chain
         assert_eq!(notification.committed(), chain);
@@ -346,7 +351,7 @@ mod tests {
             Arc::new(Chain::new(vec![block1.clone(), block2.clone()], execution_outcome, None));
 
         // Create a commit notification containing the new chain segment.
-        let notification = CanonStateNotification::Commit { new: new_chain };
+        let notification = CanonStateNotification::Commit { new: new_chain, pegins: None, pegouts: None };
 
         // Call `block_receipts` on the commit notification to retrieve block receipts.
         let block_receipts = notification.block_receipts();

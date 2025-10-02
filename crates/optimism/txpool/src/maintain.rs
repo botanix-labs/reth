@@ -101,7 +101,7 @@ where
     let metrics = MaintainPoolConditionalMetrics::default();
     loop {
         let Some(event) = events.next().await else { break };
-        if let CanonStateNotification::Commit { new } = event {
+        if let CanonStateNotification::Commit { new, pegins: _, pegouts: _ } = event {
             let block_attr = BlockConditionalAttributes {
                 number: new.tip().number(),
                 timestamp: new.tip().timestamp(),
@@ -156,7 +156,7 @@ pub async fn maintain_transaction_pool_interop<N, Pool, St>(
 
     loop {
         let Some(event) = events.next().await else { break };
-        if let CanonStateNotification::Commit { new } = event {
+        if let CanonStateNotification::Commit { new, pegins: _,  pegouts: _, } = event {
             let timestamp = new.tip().timestamp();
             let mut to_remove = Vec::new();
             let mut to_revalidate = Vec::new();

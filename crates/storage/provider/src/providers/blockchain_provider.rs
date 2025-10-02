@@ -1361,7 +1361,11 @@ mod tests {
         // Send and receive commit notifications.
         let block_2 = test_block_builder.generate_random_block(1, block_hash_1);
         let chain = Chain::new(vec![block_2], ExecutionOutcome::default(), None);
-        let commit = CanonStateNotification::Commit { new: Arc::new(chain.clone()) };
+        let commit = CanonStateNotification::Commit {
+            new: Arc::new(chain.clone()),
+            pegins: None,
+            pegouts: None,
+        };
         in_memory_state.notify_canon_state(commit.clone());
         let (notification_1, notification_2) = tokio::join!(rx_1.recv(), rx_2.recv());
         assert_eq!(notification_1, Ok(commit.clone()));

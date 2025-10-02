@@ -919,7 +919,7 @@ impl<N: NodePrimitives<SignedTx: SignedTransaction>> NewCanonicalChain<N> {
                     );
                     chain
                 }));
-                CanonStateNotification::Commit { new }
+                CanonStateNotification::Commit { new, pegins: None, pegouts: None }
             }
             Self::Reorg { new, old } => {
                 let new = Arc::new(new.iter().fold(Chain::default(), |mut chain, exec| {
@@ -1526,7 +1526,9 @@ mod tests {
                     vec![block0.recovered_block().clone(), block1.recovered_block().clone()],
                     sample_execution_outcome.clone(),
                     None
-                ))
+                )),
+                pegins: None,
+                pegouts: None
             }
         );
 
