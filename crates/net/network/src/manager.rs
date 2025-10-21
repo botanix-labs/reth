@@ -16,24 +16,7 @@
 //! to the local node. Once a (tcp) connection is established, both peers start to authenticate a [RLPx session](https://github.com/ethereum/devp2p/blob/master/rlpx.md) via a handshake. If the handshake was successful, both peers announce their capabilities and are now ready to exchange sub-protocol messages via the `RLPx` session.
 
 use crate::{
-    budget::{DEFAULT_BUDGET_TRY_DRAIN_NETWORK_HANDLE_CHANNEL, DEFAULT_BUDGET_TRY_DRAIN_SWARM},
-    config::NetworkConfig,
-    discovery::Discovery,
-    error::{NetworkError, ServiceKind},
-    eth_requests::IncomingEthRequest,
-    import::{BlockImport, BlockImportEvent, BlockImportOutcome, BlockValidation, NewBlockEvent},
-    listener::ConnectionListener,
-    message::{NewBlockMessage, PeerMessage},
-    metrics::{DisconnectMetrics, NetworkMetrics, NETWORK_POOL_TRANSACTIONS_SCOPE},
-    network::{NetworkHandle, NetworkHandleMessage},
-    peers::PeersManager,
-    poll_nested_stream_with_budget,
-    protocol::IntoRlpxSubProtocol,
-    session::SessionManager,
-    state::NetworkState,
-    swarm::{Swarm, SwarmEvent},
-    transactions::NetworkTransactionEvent,
-    FetchClient, NetworkBuilder,
+    budget::{DEFAULT_BUDGET_TRY_DRAIN_NETWORK_HANDLE_CHANNEL, DEFAULT_BUDGET_TRY_DRAIN_SWARM}, config::NetworkConfig, discovery::Discovery, error::{NetworkError, ServiceKind}, eth_requests::IncomingEthRequest, frost::FrostProtocolEvent, import::{BlockImport, BlockImportEvent, BlockImportOutcome, BlockValidation, NewBlockEvent}, listener::ConnectionListener, message::{NewBlockMessage, PeerMessage}, metrics::{DisconnectMetrics, NetworkMetrics, NETWORK_FROST_SCOPE, NETWORK_POOL_TRANSACTIONS_SCOPE}, network::{NetworkHandle, NetworkHandleMessage}, peers::PeersManager, poll_nested_stream_with_budget, protocol::IntoRlpxSubProtocol, session::SessionManager, state::NetworkState, swarm::{Swarm, SwarmEvent}, transactions::NetworkTransactionEvent, FetchClient, NetworkBuilder
 };
 use futures::{Future, StreamExt};
 use parking_lot::Mutex;
@@ -64,7 +47,7 @@ use std::{
     time::{Duration, Instant},
 };
 use tokio::sync::mpsc::{self, error::TrySendError};
-use tokio_stream::wrappers::UnboundedReceiverStream;
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 use tracing::{debug, error, trace, warn};
 
 #[cfg_attr(doc, aquamarine::aquamarine)]
@@ -108,6 +91,10 @@ pub struct NetworkManager<N: NetworkPrimitives = EthNetworkPrimitives> {
     handle: NetworkHandle<N>,
     /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
     from_handle_rx: UnboundedReceiverStream<NetworkHandleMessage<N>>,
+    /// Receiver half of the command channel set up between this type and the [`NetworkHandle`]
+    /// This is the receiver half used to receive events related to the protocol, such as
+    /// connection established, messages received, etc.
+    frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
     /// Handles block imports according to the `eth` protocol.
     block_import: Box<dyn BlockImport<N::NewBlockPayload>>,
     /// Sender for high level network events.
@@ -115,6 +102,8 @@ pub struct NetworkManager<N: NetworkPrimitives = EthNetworkPrimitives> {
     /// Sender half to send events to the
     /// [`TransactionsManager`](crate::transactions::TransactionsManager) task, if configured.
     to_transactions_manager: Option<UnboundedMeteredSender<NetworkTransactionEvent<N>>>,
+     /// Sender half to send events to the Frost manager
+    to_frost_manager: Option<UnboundedMeteredSender<FrostProtocolEvent>>,
     /// Sender half to send events to the
     /// [`EthRequestHandler`](crate::eth_requests::EthRequestHandler) task, if configured.
     ///
@@ -175,6 +164,11 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
     pub fn set_transactions(&mut self, tx: mpsc::UnboundedSender<NetworkTransactionEvent<N>>) {
         self.to_transactions_manager =
             Some(UnboundedMeteredSender::new(tx, NETWORK_POOL_TRANSACTIONS_SCOPE));
+    }
+
+    /// sets the dedicated channel for sending any events received from the frost protocol
+    pub fn set_frost_manager(&mut self, tx: mpsc::UnboundedSender<FrostProtocolEvent>) {
+        self.to_frost_manager = Some(UnboundedMeteredSender::new(tx, NETWORK_FROST_SCOPE));
     }
 
     /// Sets the dedicated channel for events intended for the
@@ -250,6 +244,9 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
             transactions_manager_config: _,
             nat,
             handshake,
+            frost_protocol_events_rx,
+            ..
+
         } = config;
 
         let peers_manager = PeersManager::new(peers_config);
@@ -339,9 +336,11 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
             swarm,
             handle,
             from_handle_rx: UnboundedReceiverStream::new(from_handle_rx),
+            frost_protocol_events_rx,
             block_import,
             event_sender,
             to_transactions_manager: None,
+            to_frost_manager: None,
             to_eth_request_handler: None,
             num_active_peers,
             metrics: Default::default(),
@@ -389,7 +388,7 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
 
     /// Create a [`NetworkBuilder`] to configure all components of the network
     pub const fn into_builder(self) -> NetworkBuilder<(), (), N> {
-        NetworkBuilder { network: self, transactions: (), request_handler: () }
+        NetworkBuilder { network: self, transactions: (), request_handler: (), frost_manager: None }
     }
 
     /// Returns the [`SocketAddr`] that listens for incoming tcp connections.
@@ -469,6 +468,15 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
     /// configured.
     fn notify_tx_manager(&self, event: NetworkTransactionEvent<N>) {
         if let Some(ref tx) = self.to_transactions_manager {
+            let _ = tx.send(event);
+        }
+    }
+
+
+    /// Sends an event to the [`TransactionsManager`](crate::transactions::TransactionsManager) if
+    /// configured.
+    fn notify_frost_manager(&self, event: FrostProtocolEvent) {
+        if let Some(ref tx) = self.to_frost_manager {
             let _ = tx.send(event);
         }
     }
@@ -631,6 +639,33 @@ impl<N: NetworkPrimitives> NetworkManager<N> {
             PeerMessage::BlockRangeUpdated(_) => {}
             PeerMessage::Other(other) => {
                 debug!(target: "net", message_id=%other.id, "Ignoring unsupported message");
+            }
+        }
+    }
+
+    /// Handles a polled [`ProtocolEvent`]
+    fn on_handle_frost_protocol_event(&self, protocol_event: FrostProtocolEvent) {
+        match protocol_event {
+            FrostProtocolEvent::ConnectionEstablished {
+                direction,
+                peer_id,
+                peer_commands_tx,
+                sender,
+            } => {
+                tracing::info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionEstablished {:?} {:?} {:?}", direction, peer_id, peer_commands_tx);
+                self.notify_frost_manager(FrostProtocolEvent::ConnectionEstablished {
+                    direction,
+                    peer_id,
+                    peer_commands_tx,
+                    sender,
+                });
+            }
+            FrostProtocolEvent::ConnectionClosed { idx } => {
+                tracing::info!(target: "network::frost::on_handle_frost_protocol_event", "ConnectionClosed for idx = {}", idx);
+                self.notify_frost_manager(FrostProtocolEvent::ConnectionClosed { idx });
+            }
+            FrostProtocolEvent::PeerMessage { peer_id, response } => {
+                self.notify_frost_manager(FrostProtocolEvent::PeerMessage { peer_id, response });
             }
         }
     }

@@ -6,6 +6,7 @@ use crate::{
 };
 use frost_secp256k1_tr as frost;
 use futures::{Future, StreamExt};
+use reth_eth_wire::NetworkPrimitives;
 use reth_network_peers::PeerId;
 use std::{
     collections::{HashMap, HashSet},
@@ -89,9 +90,9 @@ struct Connection {
 
 /// Frost Manager implementation
 #[derive(Debug)]
-pub struct FrostManager {
+pub struct FrostManager<N: NetworkPrimitives> {
     /// Network access.
-    network: NetworkHandle,
+    network: NetworkHandle<N>,
     /// Subscriptions to all network related events.
     ///
     /// From which we get all new incoming transaction related messages.
@@ -110,11 +111,11 @@ pub struct FrostManager {
     task_forwarder_txs: Vec<mpsc::UnboundedSender<PeerMessageContext>>,
 }
 
-impl FrostManager {
+impl<N: NetworkPrimitives> FrostManager<N> {
     /// Create a new [`FrostManager`] instance with the given config
     pub fn new(
         config: FrostConfig,
-        network: NetworkHandle,
+        network: NetworkHandle<N>,
         from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
@@ -481,7 +482,7 @@ impl FrostManager {
 /// [`crate::NetworkManager`] for more context on the design pattern.
 ///
 /// This should be spawned or used as part of `tokio::select!`.
-impl Future for FrostManager {
+impl<N: NetworkPrimitives> Future for FrostManager<N> {
     type Output = ();
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {

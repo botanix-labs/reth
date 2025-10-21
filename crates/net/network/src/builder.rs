@@ -3,13 +3,11 @@
 use std::fmt::Debug;
 
 use crate::{
-    eth_requests::EthRequestHandler,
-    transactions::{
+    eth_requests::EthRequestHandler, frost::manager::{FrostConfig, FrostManager}, transactions::{
         config::{StrictEthAnnouncementFilter, TransactionPropagationKind},
         policy::NetworkPolicies,
         TransactionPropagationPolicy, TransactionsManager, TransactionsManagerConfig,
-    },
-    NetworkHandle, NetworkManager,
+    }, NetworkHandle, NetworkManager
 };
 use reth_eth_wire::{EthNetworkPrimitives, NetworkPrimitives};
 use reth_network_api::test_utils::PeersHandleProvider;
@@ -26,15 +24,16 @@ pub struct NetworkBuilder<Tx, Eth, N: NetworkPrimitives = EthNetworkPrimitives> 
     pub(crate) network: NetworkManager<N>,
     pub(crate) transactions: Tx,
     pub(crate) request_handler: Eth,
+    pub(crate) frost_manager: Option<FrostManager<N>>,
 }
 
 // === impl NetworkBuilder ===
 
 impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
     /// Consumes the type and returns all fields.
-    pub fn split(self) -> (NetworkManager<N>, Tx, Eth) {
-        let Self { network, transactions, request_handler } = self;
-        (network, transactions, request_handler)
+    pub fn split(self) -> (NetworkManager<N>, Tx, Eth, Option<FrostManager<N>>) {
+        let Self { network, transactions, request_handler, frost_manager } = self;
+        (network, transactions, request_handler, frost_manager)
     }
 
     /// Returns the network manager.
@@ -53,10 +52,25 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
     }
 
     /// Consumes the type and returns all fields and also return a [`NetworkHandle`].
-    pub fn split_with_handle(self) -> (NetworkHandle<N>, NetworkManager<N>, Tx, Eth) {
-        let Self { network, transactions, request_handler } = self;
+    pub fn split_with_handle(self) -> (NetworkHandle<N>, NetworkManager<N>, Tx, Eth, Option<FrostManager<N>>) {
+        let Self { network, transactions, request_handler, frost_manager } = self;
         let handle = network.handle().clone();
-        (handle, network, transactions, request_handler)
+        (handle, network, transactions, request_handler, frost_manager)
+    }
+
+    /// Creates a new [`FrostManager`] and wires it to the network.
+    pub fn frost(self, frost_config: Option<FrostConfig>) -> Self {
+        if frost_config.is_none() {
+            self
+        } else {
+            let Self { mut network, request_handler, transactions, .. } = self;
+            let (tx, rx) = mpsc::unbounded_channel();
+            network.set_frost_manager(tx);
+            let handle = network.handle().clone();
+            let frost_manager =
+                FrostManager::new(frost_config.expect("frost config exists"), handle, rx);
+            Self { network, request_handler, transactions, frost_manager: Some(frost_manager) }
+        }
     }
 
     /// Creates a new [`EthRequestHandler`] and wires it to the network.
@@ -64,12 +78,12 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
         self,
         client: Client,
     ) -> NetworkBuilder<Tx, EthRequestHandler<Client, N>, N> {
-        let Self { mut network, transactions, .. } = self;
+        let Self { mut network, transactions, frost_manager, .. } = self;
         let (tx, rx) = mpsc::channel(ETH_REQUEST_CHANNEL_CAPACITY);
         network.set_eth_request_handler(tx);
         let peers = network.handle().peers_handle().clone();
         let request_handler = EthRequestHandler::new(client, peers, rx);
-        NetworkBuilder { network, request_handler, transactions }
+        NetworkBuilder { network, request_handler, transactions, frost_manager }
     }
 
     /// Creates a new [`TransactionsManager`] and wires it to the network.
@@ -107,7 +121,7 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
         Eth,
         N,
     > {
-        let Self { mut network, request_handler, .. } = self;
+        let Self { mut network, request_handler, frost_manager, .. } = self;
         let (tx, rx) = mpsc::unbounded_channel();
         network.set_transactions(tx);
         let handle = network.handle().clone();
@@ -121,6 +135,6 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
             transactions_manager_config,
             policies,
         );
-        NetworkBuilder { network, request_handler, transactions }
+        NetworkBuilder { network, request_handler, transactions, frost_manager }
     }
 }

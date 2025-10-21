@@ -1,10 +1,7 @@
 //! Network config support
 
 use crate::{
-    error::NetworkError,
-    import::{BlockImport, ProofOfStakeBlockImport},
-    transactions::TransactionsManagerConfig,
-    NetworkHandle, NetworkManager,
+    error::NetworkError, frost::{manager::FrostConfig, FrostProtocolEvent}, import::{BlockImport, ProofOfStakeBlockImport}, transactions::TransactionsManagerConfig, NetworkHandle, NetworkManager
 };
 use reth_chainspec::{ChainSpecProvider, EthChainSpec, Hardforks};
 use reth_discv4::{Discv4Config, Discv4ConfigBuilder, NatResolver, DEFAULT_DISCOVERY_ADDRESS};
@@ -21,6 +18,7 @@ use reth_network_types::{PeersConfig, SessionsConfig};
 use reth_storage_api::{noop::NoopProvider, BlockNumReader, BlockReader, HeaderProvider};
 use reth_tasks::{TaskSpawner, TokioTaskExecutor};
 use secp256k1::SECP256K1;
+use tokio_stream::wrappers::ReceiverStream;
 use std::{collections::HashSet, net::SocketAddr, sync::Arc};
 
 // re-export for convenience
@@ -81,6 +79,10 @@ pub struct NetworkConfig<C, N: NetworkPrimitives = EthNetworkPrimitives> {
     pub extra_protocols: RlpxSubProtocols,
     /// Whether to disable transaction gossip
     pub tx_gossip_disabled: bool,
+    /// Frost configuration
+    pub frost_config: Option<FrostConfig>,
+    /// Receiver for frost protocol events
+    pub frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
     /// How to instantiate transactions manager.
     pub transactions_manager_config: TransactionsManagerConfig,
     /// The NAT resolver for external IP
@@ -164,7 +166,7 @@ where
     /// Starts the networking stack given a [`NetworkConfig`] and returns a handle to the network.
     pub async fn start_network(self) -> Result<NetworkHandle<N>, NetworkError> {
         let client = self.client.clone();
-        let (handle, network, _txpool, eth) = NetworkManager::builder::<C>(self)
+        let (handle, network, _txpool, eth, _) = NetworkManager::builder::<C>(self)
             .await?
             .request_handler::<C>(client)
             .split_with_handle();
@@ -217,6 +219,10 @@ pub struct NetworkConfigBuilder<N: NetworkPrimitives = EthNetworkPrimitives> {
     /// The Ethereum P2P handshake, see also:
     /// <https://github.com/ethereum/devp2p/blob/master/rlpx.md#initial-handshake>.
     handshake: Arc<dyn EthRlpxHandshake>,
+    /// Frost Configuration
+    frost_config: Option<FrostConfig>,
+    /// Receiver for frost protocol events
+    frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
 }
 
 impl NetworkConfigBuilder<EthNetworkPrimitives> {
@@ -257,6 +263,8 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config: Default::default(),
             nat: None,
             handshake: Arc::new(EthHandshake::default()),
+            frost_config: None,
+            frost_protocol_events_rx: None,
         }
     }
 
@@ -541,6 +549,23 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
         self
     }
 
+    /// Sets the frost config.
+    pub fn frost_config(mut self, frost_config: Option<FrostConfig>) -> Self {
+        if frost_config.is_some() {
+            self.frost_config = frost_config;
+        }
+        self
+    }
+
+    /// Sets the frost protocol events rx.
+    pub fn frost_protocol_events_rx(
+        mut self,
+        frost_protocol_events: ReceiverStream<FrostProtocolEvent>,
+    ) -> Self {
+        self.frost_protocol_events_rx = Some(frost_protocol_events);
+        self
+    }
+
     /// Convenience function for creating a [`NetworkConfig`] with a noop provider that does
     /// nothing.
     pub fn build_with_noop_provider<ChainSpec>(
@@ -597,6 +622,8 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config,
             nat,
             handshake,
+            frost_config,
+            frost_protocol_events_rx,
         } = self;
 
         let head = head.unwrap_or_else(|| Head {
@@ -665,6 +692,8 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config,
             nat,
             handshake,
+            frost_config,
+            frost_protocol_events_rx,
         }
     }
 }

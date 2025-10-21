@@ -9,6 +9,9 @@ use reth_metrics::{
 /// Scope for monitoring transactions sent from the manager to the tx manager
 pub(crate) const NETWORK_POOL_TRANSACTIONS_SCOPE: &str = "network.pool.transactions";
 
+/// Scope for monitoring transactions sent from the manager to the frost manager
+pub(crate) const NETWORK_FROST_SCOPE: &str = "network.frost";
+
 /// Metrics for the entire network, handled by `NetworkManager`
 #[derive(Metrics)]
 #[metrics(scope = "network")]

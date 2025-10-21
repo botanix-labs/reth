@@ -41,7 +41,7 @@ pub async fn new_tx_manager(
     let pool = testing_pool();
 
     let transactions_manager_config = config.transactions_manager_config.clone();
-    let (_network_handle, network, transactions, _) = NetworkManager::new(config)
+    let (_network_handle, network, transactions, _frost_protocol_events_rx, _) = NetworkManager::new(config)
         .await
         .unwrap()
         .into_builder()
