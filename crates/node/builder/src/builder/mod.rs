@@ -332,6 +332,13 @@ impl<DB, ChainSpec> WithLaunchContext<NodeBuilder<DB, ChainSpec>> {
     }
 }
 
+impl<DB, ChainSpec> WithLaunchContext<NodeBuilder<DB, ChainSpec>> {
+    /// Returns a reference to the node builder's db.
+    pub const fn db(&self) -> &DB {
+        self.builder.db()
+    }
+}
+
 impl<DB, ChainSpec> WithLaunchContext<NodeBuilder<DB, ChainSpec>>
 where
     DB: Database + DatabaseMetrics + Clone + Unpin + 'static,
