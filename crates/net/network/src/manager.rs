@@ -1128,6 +1128,31 @@ impl<N: NetworkPrimitives> Future for NetworkManager<N> {
             this.on_block_import_result(outcome);
         }
 
+        // process incoming events from the frost protocol
+        let mut frost_protocol_events = vec![];
+        if let Some(frost_protocol_events_rx) = this.frost_protocol_events_rx.as_mut() {
+            loop {
+                match frost_protocol_events_rx.poll_next_unpin(cx) {
+                    Poll::Pending => break,
+                    Poll::Ready(None) => {
+                        // This is only possible if the channel was deliberately closed since we
+                        // always have an instance of `NetworkHandle`
+                        tracing::error!("Network message channel closed.");
+
+                        return Poll::Ready(());
+                    }
+                    Poll::Ready(Some(event)) => {
+                        frost_protocol_events.push(event);
+                    }
+                };
+            }
+        }
+
+        for event in frost_protocol_events {
+            this.on_handle_frost_protocol_event(event);
+        }
+        
+
         // These loops drive the entire state of network and does a lot of work. Under heavy load
         // (many messages/events), data may arrive faster than it can be processed (incoming
         // messages/requests -> events), and it is possible that more data has already arrived by
