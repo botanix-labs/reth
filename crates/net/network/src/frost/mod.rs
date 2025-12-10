@@ -47,16 +47,19 @@ pub struct DkgResponse {
     pub sender: Vec<u8>,
     /// Frost Recipient to whom the message should be sent
     pub recipient: Vec<u8>,
+    /// Multisig Id for which the DKG message is intended
+    pub multisig_id: u32,
 }
 
 impl fmt::Display for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {:?}",
             self.data.len(),
             self.sender,
             self.recipient,
+            self.multisig_id,
         )
     }
 }
@@ -65,14 +68,14 @@ impl fmt::Debug for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}",
+            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {:?}",
             self.data.len(),
             self.sender,
             self.recipient,
+            self.multisig_id,
         )
     }
 }
-
 /// Response structure for internal communication
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct UtxoSetResponse {

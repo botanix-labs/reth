@@ -332,9 +332,9 @@ impl Stream for FrostProtoConnection {
                         return Poll::Ready(None);
                     }
                     PeerMessageResponse::Dkg(dkg_response) => {
-                        let DkgResponse { data, sender, recipient } = dkg_response;
+                        let DkgResponse { data, sender, recipient , multisig_id} = dkg_response;
 
-                        let req = DkgRequest::new(data, sender, recipient);
+                        let req = DkgRequest::new(data, sender, recipient, multisig_id);
                         FrostProtoMessage::dkg_request_message(req)
                     }
                     PeerMessageResponse::Signing(signing_response) => {
@@ -445,6 +445,7 @@ impl Stream for FrostProtoConnection {
                     sender: data.sender,
                     recipient: data.recipient,
                     data: data.data,
+                    multisig_id: data.multisig_id,
                 }),
                 peer_id: this.peer_id,
             },

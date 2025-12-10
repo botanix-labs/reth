@@ -20,12 +20,14 @@ pub struct DkgRequest {
     pub sender: Vec<u8>,
     /// Frost recipient
     pub recipient: Vec<u8>,
+    /// Multisig Id for which the DKG message is intended
+    pub multisig_id: u32,
 }
 
 impl DkgRequest {
     /// Constructs a new DKG Request using a frost identifier and a data payload.
-    pub const fn new(data: Vec<u8>, sender: Vec<u8>, recipient: Vec<u8>) -> Self {
-        Self { version: MESSAGE_VERSION as u16, data, sender, recipient }
+    pub const fn new(data: Vec<u8>, sender: Vec<u8>, recipient: Vec<u8>, multisig_id: u32) -> Self {
+        Self { version: MESSAGE_VERSION as u16, data, sender, recipient, multisig_id }
     }
 }
 
@@ -169,7 +171,7 @@ impl FrostProtoMessage {
             message: FrostProtoMessageKind::PingMessage(peer_id),
         }
     }
-    /// Creates a ping message
+    /// Creates a pong message
     pub const fn pong_message(peer_id: PeerId) -> Self {
         Self {
             message_type: FrostProtoMessageId::PongMessage,
@@ -225,53 +227,51 @@ impl FrostProtoMessage {
         }
     }
 
-    /// Creates a new `TestProtoMessage` with the given message ID and payload.
-    /// Creates a new Frost protocol with the given message ID and payload.
+    /// Encodes the message into bytes
     pub fn encoded(&self) -> BytesMut {
         let mut buf = BytesMut::new();
         buf.put_u8(self.message_type as u8);
         match &self.message {
             FrostProtoMessageKind::Dkg(resource) => {
                 // sender
-                buf.put_u8(resource.sender.len() as u8); // Assuming sender is not too long
+                buf.put_u8(resource.sender.len() as u8);
                 buf.put_slice(&resource.sender);
                 // recipient
-                buf.put_u8(resource.recipient.len() as u8); // Assuming recipient is not too long
+                buf.put_u8(resource.recipient.len() as u8);
                 buf.put_slice(&resource.recipient);
+                // multisig_id
+                buf.put_u32_le(resource.multisig_id);
                 // data
-                buf.put_u32_le(resource.data.len() as u32); // Use u32 to support larger data sizes
+                buf.put_u32_le(resource.data.len() as u32);
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Ping | FrostProtoMessageKind::Pong => {}
             FrostProtoMessageKind::PingMessage(peer_id) |
             FrostProtoMessageKind::PongMessage(peer_id) => {
-                // peer id
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
-                buf.put_u16_le(peer_id_bytes.len() as u16); // Store the length of the peer_id string
-                buf.put_slice(peer_id_bytes); // Store the peer_id string itself
+                buf.put_u16_le(peer_id_bytes.len() as u16);
+                buf.put_slice(peer_id_bytes);
             }
             FrostProtoMessageKind::SignerRound1SigningPackage(resource) |
             FrostProtoMessageKind::SignerRound2SigningPackage(resource) |
             FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) |
             FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // signing session id
-                buf.put_u32_le(resource.signing_session_id.len() as u32); // Use u32 to support larger data sizes
+                buf.put_u32_le(resource.signing_session_id.len() as u32);
                 buf.put_slice(&resource.signing_session_id);
                 // psbt
-                buf.put_u32_le(resource.psbt.len() as u32); // Use u32 to support larger data sizes
+                buf.put_u32_le(resource.psbt.len() as u32);
                 buf.put_slice(&resource.psbt);
             }
             FrostProtoMessageKind::WalletState(resource) => {
                 // uuid
                 buf.put_u32_le(resource.uuid.len() as u32);
                 buf.put_slice(resource.uuid.as_bytes());
-
                 // version
                 buf.put_u16_le(resource.version);
-
-                // finalized_pegout_ids - first put the length of the vector
-                buf.put_u32_le(resource.finalized_pegout_ids.len() as u32); // Use u32 to support larger data sizes
+                // finalized_pegout_ids
+                buf.put_u32_le(resource.finalized_pegout_ids.len() as u32);
                 buf.put_slice(&resource.finalized_pegout_ids);
             }
         }
@@ -287,9 +287,6 @@ impl FrostProtoMessage {
 
         // Safely get message ID
         let id = buf[0];
-        if buf.is_empty() {
-            return None;
-        }
         buf.advance(1);
 
         // Match message type
@@ -310,92 +307,80 @@ impl FrostProtoMessage {
         // Decode message based on type
         let message = match message_type {
             FrostProtoMessageId::Dkg => {
-                // Check if there's enough data for sender_len
+                // sender_len
                 if buf.is_empty() {
                     return None;
                 }
-
                 let sender_len = buf[0] as usize;
                 buf.advance(1);
 
+                // sender
                 if buf.len() < sender_len {
                     return None;
                 }
                 let sender = buf[..sender_len].to_vec();
                 buf.advance(sender_len);
 
-                // Check if there's enough data for recipient_len
+                // recipient_len
                 if buf.is_empty() {
                     return None;
                 }
-
                 let recipient_len = buf[0] as usize;
                 buf.advance(1);
 
+                // recipient
                 if buf.len() < recipient_len {
                     return None;
                 }
                 let recipient = buf[..recipient_len].to_vec();
                 buf.advance(recipient_len);
 
-                // Check if there's enough data for data_len
+                // multisig_id
                 if buf.len() < 4 {
                     return None;
                 }
-
-                let data_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let multisig_id = u32::from_le_bytes(buf[..4].try_into().ok()?);
                 buf.advance(4);
 
+                // data_len
+                if buf.len() < 4 {
+                    return None;
+                }
+                let data_len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
+                buf.advance(4);
+
+                // data
                 if buf.len() < data_len {
                     return None;
                 }
-
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient))
+                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient, multisig_id))
             }
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
 
             FrostProtoMessageId::PingMessage | FrostProtoMessageId::PongMessage => {
-                // Check if there's enough data for peer_id_len
+                // peer_id_len
                 if buf.len() < 2 {
                     return None;
                 }
-
-                // Safely convert bytes to u16
-                let peer_id_len = match buf[..2].try_into() {
-                    Ok(bytes) => u16::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let peer_id_len = u16::from_le_bytes(buf[..2].try_into().ok()?) as usize;
                 buf.advance(2);
 
-                // Check if there's enough data for peer_id_str
+                // peer_id_str
                 if buf.len() < peer_id_len {
                     return None;
                 }
-
-                // Safely convert bytes to string
-                let peer_id_str = match std::str::from_utf8(&buf[..peer_id_len]) {
-                    Ok(s) => s,
-                    Err(_) => return None,
-                };
-
-                // Safely convert string to PeerId
-                let peer_id = match PeerId::from_str(peer_id_str) {
-                    Ok(id) => id,
-                    Err(_) => return None,
-                };
+                let peer_id_str = std::str::from_utf8(&buf[..peer_id_len]).ok()?;
+                let peer_id = PeerId::from_str(peer_id_str).ok()?;
                 buf.advance(peer_id_len);
 
                 match message_type {
                     FrostProtoMessageId::PingMessage => FrostProtoMessageKind::PingMessage(peer_id),
                     FrostProtoMessageId::PongMessage => FrostProtoMessageKind::PongMessage(peer_id),
-                    _ => unreachable!(), // We've already matched these values above
+                    _ => unreachable!(),
                 }
             }
 
@@ -403,43 +388,31 @@ impl FrostProtoMessage {
             FrostProtoMessageId::CoordinatorRound1SigningPackage |
             FrostProtoMessageId::SignerRound2SigningPackage |
             FrostProtoMessageId::CoordinatorRound2SigningPackage => {
-                // Check if there's enough data for session_id_len
+                // session_id_len
                 if buf.len() < 4 {
                     return None;
                 }
-
-                // Safely convert bytes to u32
-                let session_id_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let session_id_len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
                 buf.advance(4);
 
-                // Check if there's enough data for signing_session_id
+                // signing_session_id
                 if buf.len() < session_id_len {
                     return None;
                 }
-
                 let signing_session_id = buf[..session_id_len].to_vec();
                 buf.advance(session_id_len);
 
-                // Check if there's enough data for psbt_len
+                // psbt_len
                 if buf.len() < 4 {
                     return None;
                 }
-
-                // Safely convert bytes to u32
-                let psbt_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let psbt_len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
                 buf.advance(4);
 
-                // Check if there's enough data for psbt
+                // psbt
                 if buf.len() < psbt_len {
                     return None;
                 }
-
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
@@ -458,64 +431,43 @@ impl FrostProtoMessage {
                     FrostProtoMessageId::CoordinatorRound2SigningPackage => {
                         FrostProtoMessageKind::CoordinatorRound2SigningPackage(sign_request)
                     }
-                    _ => unreachable!(), // We've already matched these values above
+                    _ => unreachable!(),
                 }
             }
 
             FrostProtoMessageId::WalletState => {
-                // Check if there's enough data for uuid_len
+                // uuid_len
                 if buf.len() < 4 {
                     return None;
                 }
-
-                // Safely convert bytes to u32 for uuid_len
-                let uuid_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let uuid_len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
                 buf.advance(4);
 
-                // Check if there's enough data for uuid
+                // uuid
                 if buf.len() < uuid_len {
                     return None;
                 }
-
-                // Safely convert bytes to string for uuid
-                let uuid = match String::from_utf8(buf[..uuid_len].to_vec()) {
-                    Ok(s) => s,
-                    Err(_) => return None,
-                };
+                let uuid = String::from_utf8(buf[..uuid_len].to_vec()).ok()?;
                 buf.advance(uuid_len);
 
-                // Check if there's enough data for version
+                // version
                 if buf.len() < 2 {
                     return None;
                 }
-
-                // Safely convert bytes to u16 for version
-                let version = match buf[..2].try_into() {
-                    Ok(bytes) => u16::from_le_bytes(bytes),
-                    Err(_) => return None,
-                };
+                let version = u16::from_le_bytes(buf[..2].try_into().ok()?);
                 buf.advance(2);
 
-                // Check if there's enough data for finalized_pegout_ids_len
+                // finalized_pegout_ids_len
                 if buf.len() < 4 {
                     return None;
                 }
-
-                // Safely convert bytes to u32 for finalized_pegout_ids_len
-                let finalized_pegout_ids_len = match buf[..4].try_into() {
-                    Ok(bytes) => u32::from_le_bytes(bytes) as usize,
-                    Err(_) => return None,
-                };
+                let finalized_pegout_ids_len = u32::from_le_bytes(buf[..4].try_into().ok()?) as usize;
                 buf.advance(4);
 
-                // Check if there's enough data for finalized_pegout_ids
+                // finalized_pegout_ids
                 if buf.len() < finalized_pegout_ids_len {
                     return None;
                 }
-
                 let finalized_pegout_ids = buf[..finalized_pegout_ids_len].to_vec();
                 buf.advance(finalized_pegout_ids_len);
 
@@ -534,25 +486,20 @@ impl FrostProtoMessage {
 #[cfg(test)]
 mod tests {
     use super::WalletStateRequest;
-    #[allow(unused_imports)]
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
     };
-    #[allow(unused_imports)]
-    use reth_primitives_traits::SealedBlock;
-    #[allow(unused_imports)]
     use reth_network_peers::PeerId;
-    #[allow(unused_imports)]
     use std::str::FromStr;
 
     #[test]
     fn test_dkg_encoding_decoding() {
         let dkg_request =
-            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5]);
+            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5], 42);
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Dkg,
-            message: FrostProtoMessageKind::Dkg(dkg_request),
+            message: FrostProtoMessageKind::Dkg(dkg_request.clone()),
         };
 
         // Encode the message
@@ -565,6 +512,11 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
+        
+        // Verify multisig_id specifically
+        if let FrostProtoMessageKind::Dkg(decoded_dkg) = decoded_message.message {
+            assert_eq!(decoded_dkg.multisig_id, 42);
+        }
     }
 
     #[test]
