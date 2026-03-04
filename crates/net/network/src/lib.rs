@@ -94,7 +94,7 @@
 //!     let transactions_manager_config = config.transactions_manager_config.clone();
 //!
 //!     // create the network instance
-//!     let (handle, network, transactions, request_handler) = NetworkManager::builder(config)
+//!     let (handle, network, txs, reqs, frost) = NetworkManager::builder(config)
 //!         .await
 //!         .unwrap()
 //!         .transactions(pool, transactions_manager_config)
