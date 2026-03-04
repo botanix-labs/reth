@@ -1,7 +1,7 @@
 //! Network config support
 
 use crate::{
-    error::NetworkError, frost::{manager::FrostConfig, FrostProtocolEvent}, import::{BlockImport, ProofOfStakeBlockImport}, transactions::TransactionsManagerConfig, NetworkHandle, NetworkManager
+    error::NetworkError, frost::FrostProtocolEvent, import::{BlockImport, ProofOfStakeBlockImport}, transactions::TransactionsManagerConfig, NetworkHandle, NetworkManager
 };
 use reth_chainspec::{ChainSpecProvider, EthChainSpec, Hardforks};
 use reth_discv4::{Discv4Config, Discv4ConfigBuilder, NatResolver, DEFAULT_DISCOVERY_ADDRESS};
@@ -79,8 +79,8 @@ pub struct NetworkConfig<C, N: NetworkPrimitives = EthNetworkPrimitives> {
     pub extra_protocols: RlpxSubProtocols,
     /// Whether to disable transaction gossip
     pub tx_gossip_disabled: bool,
-    /// Frost configuration
-    pub frost_config: Option<FrostConfig>,
+    /// Frost authoritites 
+    pub frost_authorities: Vec<secp256k1::PublicKey>,
     /// Receiver for frost protocol events
     pub frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
     /// How to instantiate transactions manager.
@@ -219,8 +219,8 @@ pub struct NetworkConfigBuilder<N: NetworkPrimitives = EthNetworkPrimitives> {
     /// The Ethereum P2P handshake, see also:
     /// <https://github.com/ethereum/devp2p/blob/master/rlpx.md#initial-handshake>.
     handshake: Arc<dyn EthRlpxHandshake>,
-    /// Frost Configuration
-    frost_config: Option<FrostConfig>,
+    /// Frost authorities 
+    frost_authorities: Vec<secp256k1::PublicKey>,
     /// Receiver for frost protocol events
     frost_protocol_events_rx: Option<ReceiverStream<FrostProtocolEvent>>,
 }
@@ -263,7 +263,7 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config: Default::default(),
             nat: None,
             handshake: Arc::new(EthHandshake::default()),
-            frost_config: None,
+            frost_authorities: vec![],
             frost_protocol_events_rx: None,
         }
     }
@@ -549,11 +549,9 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
         self
     }
 
-    /// Sets the frost config.
-    pub fn frost_config(mut self, frost_config: Option<FrostConfig>) -> Self {
-        if frost_config.is_some() {
-            self.frost_config = frost_config;
-        }
+    /// Sets the frost authorities.
+    pub fn frost_authorities(mut self, authorities: Vec<secp256k1::PublicKey>) -> Self {
+        self.frost_authorities = authorities;
         self
     }
 
@@ -622,7 +620,7 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config,
             nat,
             handshake,
-            frost_config,
+            frost_authorities,
             frost_protocol_events_rx,
         } = self;
 
@@ -692,7 +690,7 @@ impl<N: NetworkPrimitives> NetworkConfigBuilder<N> {
             transactions_manager_config,
             nat,
             handshake,
-            frost_config,
+            frost_authorities,
             frost_protocol_events_rx,
         }
     }
