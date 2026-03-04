@@ -667,24 +667,71 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode WalletStateMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
-            assert_eq!(
-                wallet_state_request.uuid, "550e8400-e29b-41d4-a716-446655440000",
-                "uuid does not match"
-            );
-            assert_eq!(wallet_state_request.version, 1, "version does not match");
-            assert_eq!(
-                wallet_state_request.finalized_pegout_ids.len(),
-                finalized_pegout_ids.len(),
-                "finalized_pegout_ids length does not match"
-            );
-            assert_eq!(
-                wallet_state_request.finalized_pegout_ids, finalized_pegout_ids,
-                "pegout id does not match"
-            );
-        } else {
-            panic!("Decoded message is not a WalletState Message");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_signing_decoding_backwards_compatibility() {
+        // Legacy bytes generated without version or multisig id
+        const LEGACY_BYTES: &[u8] = &[6, 5, 0, 0, 0, 5, 6, 7, 8, 9, 5, 0, 0, 0, 0, 1, 0, 1, 0];
+
+        let signing_request = SignRequest {
+            // Default value when missing
+            version: MESSAGE_VERSION as u16,
+            signing_session_id: vec![5, 6, 7, 8, 9],
+            psbt: vec![0, 1, 0, 1, 0],
+            // Default value when missing
+            multisig_id: LEGACY_MULTISIG_ID,
+        };
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::SignerRound1SigningPackage,
+            message: FrostProtoMessageKind::SignerRound1SigningPackage(signing_request),
+        };
+
+        // Simulate receiving the encoded legacy bytes that do not include the
+        // version or multisig id, and decoding them
+        let mut encoded_bytes_slice: &[u8] = &LEGACY_BYTES;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_wallet_state_decoding_backwards_compatibility() {
+        // Legacy bytes generated without multisig id
+        const LEGACY_BYTES: &[u8] = &[
+            11, 36, 0, 0, 0, 53, 53, 48, 101, 56, 52, 48, 48, 45, 101, 50, 57, 98, 45, 52, 49, 100,
+            52, 45, 97, 55, 49, 54, 45, 52, 52, 54, 54, 53, 53, 52, 52, 48, 48, 48, 48, 1, 0, 3, 0,
+            0, 0, 1, 2, 3,
+        ];
+
+        let wallet_sync_request = WalletStateRequest {
+            version: 1,
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            finalized_pegout_ids: vec![1, 2, 3],
+            // Default value when missing
+            multisig_id: LEGACY_MULTISIG_ID,
+        };
+
+        // The default value that is used when the multisig id is missing
+        assert_eq!(wallet_sync_request.multisig_id, LEGACY_MULTISIG_ID);
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::WalletState,
+            message: FrostProtoMessageKind::WalletState(wallet_sync_request),
+        };
+
+        // Simulate receiving the encoded legacy bytes that do not include the
+        // multisig id, and decoding them
+        let mut encoded_bytes_slice: &[u8] = &LEGACY_BYTES;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode WalletStateMessage");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 }
