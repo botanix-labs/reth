@@ -12,15 +12,15 @@ const WALLET_STATE_MESSAGE_VERSION: usize = 0;
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgRequest {
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
-    /// Frost data
-    pub data: Vec<u8>,
     /// Frost sender
     pub sender: Vec<u8>,
     /// Frost recipient
     pub recipient: Vec<u8>,
-    /// Multisig Id for which the DKG message is intended
+    /// Frost data
+    pub data: Vec<u8>,
+    /// Multisig Id for which the message is intended
     pub multisig_id: u32,
 }
 
@@ -34,19 +34,21 @@ impl DkgRequest {
 /// A structured frost sign message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignRequest {
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
     /// Signing session id
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl SignRequest {
     /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
     /// payload.
-    pub const fn new(signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
-        Self { version: MESSAGE_VERSION as u16, signing_session_id, psbt }
+    pub const fn new(signing_session_id: Vec<u8>, psbt: Vec<u8>, multisig_id: u32) -> Self {
+        Self { version: MESSAGE_VERSION as u16, signing_session_id, psbt, multisig_id }
     }
 }
 
@@ -55,10 +57,12 @@ impl SignRequest {
 pub struct WalletStateRequest {
     /// uuid of the wallet state sync request
     pub uuid: String,
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
     /// finalized pegout ids
     pub finalized_pegout_ids: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl fmt::Display for WalletStateRequest {
@@ -74,11 +78,12 @@ impl fmt::Display for WalletStateRequest {
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub fn new(uuid: &str, finalized_pegout_ids: Vec<u8>) -> Self {
+    pub fn new(uuid: String, finalized_pegout_ids: Vec<u8>, multisig_id: u32) -> Self {
         Self {
-            version: WALLET_STATE_MESSAGE_VERSION as u16,
+            version: MESSAGE_VERSION as u16,
             finalized_pegout_ids,
-            uuid: uuid.to_string(),
+            uuid,
+            multisig_id,
         }
     }
 }
