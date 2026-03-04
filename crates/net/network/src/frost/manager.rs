@@ -114,15 +114,14 @@ pub struct FrostManager<N: NetworkPrimitives> {
 impl<N: NetworkPrimitives> FrostManager<N> {
     /// Create a new [`FrostManager`] instance with the given config
     pub fn new(
-        config: FrostConfig,
+        authorities: Vec<secp256k1::PublicKey>,
         network: NetworkHandle<N>,
         from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
         let (command_tx, command_rx) = mpsc::unbounded_channel();
         // Prepare the authorities with their respective FROST identifiers and
         // connection trackers.
-        let authorities = config
-            .authorities
+        let authorities = authorities
             .iter()
             .enumerate()
             .map(|(index, pk)| {
@@ -449,7 +448,7 @@ impl<N: NetworkPrimitives> FrostManager<N> {
                     );
                 }
             }
-            FrostCommand::GetWalletStateFromPeer(uuid) => {
+            FrostCommand::GetWalletStateFromPeer((uuid, multisig_id)) => {
                 let peer_ids: Vec<_> = self.authorities.keys().cloned().collect();
                 // filter all peers with active connections
                 let connected_peers =
@@ -460,6 +459,7 @@ impl<N: NetworkPrimitives> FrostManager<N> {
                         PeerMessageResponse::WalletState(WalletStateResponse {
                             uuid: uuid.to_string(),
                             finalized_pegout_ids: vec![],
+                            multisig_id,
                         }),
                     )) {
                         Ok(_) => {
@@ -529,70 +529,7 @@ pub enum FrostCommand {
     /// Get a receiver for streaming peer messages
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
     /// Get pending pegouts state from peer
-    GetWalletStateFromPeer(uuid::Uuid),
-}
-
-/// Config type for initiating a [`FrostManager`] instance.
-#[derive(Clone, Debug)]
-pub struct FrostConfig {
-    /// Authority public key of the current peer participating in frost
-    pub authority_pk: secp256k1::PublicKey,
-    /// Authority index of the current peer participating in frost
-    pub authority_index: usize,
-    /// Total number of authorities participating in frost
-    pub authorities: Vec<secp256k1::PublicKey>,
-    /// Minimum number of signers required to participate in frost
-    pub min_signers: u16,
-    /// Maximum number of signers required to participate in frost
-    pub max_signers: u16,
-    /// Size of chunks for wallet state sync
-    pub wallet_state_sync_chunk_size: u64,
-}
-
-impl FrostConfig {
-    /// Create a new [`FrostConfig`] with default values
-    pub const fn new(
-        authority_pk: secp256k1::PublicKey,
-        authority_index: usize,
-        authorities: Vec<secp256k1::PublicKey>,
-        min_signers: u16,
-        max_signers: u16,
-        wallet_state_sync_chunk_size: u64,
-    ) -> Self {
-        Self {
-            authority_pk,
-            authority_index,
-            authorities,
-            min_signers,
-            max_signers,
-            wallet_state_sync_chunk_size,
-        }
-    }
-
-    /// Sets the authority public key
-    pub fn set_authority_pk(&mut self, authority_pk: secp256k1::PublicKey) {
-        self.authority_pk = authority_pk;
-    }
-
-    /// Sets the authority index
-    pub fn set_authority_index(&mut self, authority_index: usize) {
-        self.authority_index = authority_index;
-    }
-
-    /// Sets total authorities
-    pub fn set_authorities(&mut self, authorities: Vec<secp256k1::PublicKey>) {
-        self.authorities = authorities;
-    }
-
-    /// Sets minimum signers
-    pub fn set_min_signers(&mut self, min_signers: u16) {
-        self.min_signers = min_signers;
-    }
-
-    /// Sets maximum signers
-    pub fn set_max_signers(&mut self, max_signers: u16) {
-        self.max_signers = max_signers;
-    }
+    GetWalletStateFromPeer((uuid::Uuid, u32)),
 }
 
 // TODO(armins): import btcserverlib::frost_id and use on the callers
