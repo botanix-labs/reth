@@ -16,7 +16,7 @@ use reth_cli_util::get_secret_key;
 use reth_db_api::{database::Database, database_metrics::DatabaseMetrics};
 use reth_exex::ExExContext;
 use reth_network::{
-    frost::manager::FrostConfig, transactions::{TransactionPropagationPolicy, TransactionsManagerConfig}, NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager, NetworkPrimitives
+    transactions::{TransactionPropagationPolicy, TransactionsManagerConfig}, NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager, NetworkPrimitives
 };
 use reth_node_api::{
     FullNodePrimitives, FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes,
@@ -781,7 +781,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         &self,
         builder: NetworkBuilder<(), (), N>,
         pool: Pool,
-        frost_config: Option<FrostConfig>,
+        frost_authorities: Vec<secp256k1::PublicKey>,
     ) -> NetworkHandle<N>
     where
         N: NetworkPrimitives,
@@ -799,7 +799,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
             pool,
             self.config().network.transactions_manager_config(),
             self.config().network.tx_propagation_policy,
-            frost_config,
+            frost_authorities,
         )
     }
 
@@ -815,7 +815,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         pool: Pool,
         tx_config: TransactionsManagerConfig,
         propagation_policy: Policy,
-        frost_config: Option<FrostConfig>,
+        frost_authorities: Vec<secp256k1::PublicKey>,
     ) -> NetworkHandle<N>
     where
         N: NetworkPrimitives,
@@ -831,7 +831,8 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
     {
         let (handle, network, txpool, eth, _frost) = builder
             .transactions_with_policy(pool, tx_config, propagation_policy)
-            .frost(frost_config)
+            // Note that this is noop if the authorities list is empty.
+            .frost(frost_authorities)
             .request_handler(self.provider().clone())
             .split_with_handle();
 
