@@ -338,32 +338,32 @@ impl Stream for FrostProtoConnection {
                         FrostProtoMessage::dkg_request_message(req)
                     }
                     PeerMessageResponse::Signing(signing_response) => {
-                        let SigningResponse { response_type, signing_session_id, psbt } =
+                        let SigningResponse { response_type, signing_session_id, psbt, multisig_id } =
                             signing_response;
 
                         match response_type {
                             SigningEventResponseType::SignerRound1SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt, multisig_id);
                                 FrostProtoMessage::round1_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound1SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt, multisig_id);
                                 FrostProtoMessage::round1_coordinator_signing_package_message(req)
                             }
                             SigningEventResponseType::SignerRound2SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt, multisig_id);
                                 FrostProtoMessage::round2_signer_package_message(req)
                             }
                             SigningEventResponseType::CoordinatorRound2SigningPackage => {
-                                let req = SignRequest::new(signing_session_id, psbt);
+                                let req = SignRequest::new(signing_session_id, psbt, multisig_id);
                                 FrostProtoMessage::round2_coordinator_signing_package_message(req)
                             }
                         }
                     }
                     PeerMessageResponse::WalletState(wallet_state_response) => {
-                        let WalletStateResponse { uuid, finalized_pegout_ids } =
+                        let WalletStateResponse { uuid, finalized_pegout_ids, multisig_id } =
                             wallet_state_response;
-                        let req = WalletStateRequest::new(&uuid, finalized_pegout_ids);
+                        let req = WalletStateRequest::new(uuid, finalized_pegout_ids, multisig_id);
                         FrostProtoMessage::wallet_state_message(req)
                     }
                 },
@@ -455,6 +455,7 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::SignerRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        multisig_id: data.multisig_id,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -465,6 +466,7 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::CoordinatorRound1SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        multisig_id: data.multisig_id,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -475,6 +477,7 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::SignerRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        multisig_id: data.multisig_id,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -485,6 +488,7 @@ impl Stream for FrostProtoConnection {
                         response_type: SigningEventResponseType::CoordinatorRound2SigningPackage,
                         signing_session_id: data.signing_session_id,
                         psbt: data.psbt,
+                        multisig_id: data.multisig_id,
                     }),
                     peer_id: this.peer_id,
                 }
@@ -493,6 +497,7 @@ impl Stream for FrostProtoConnection {
                 response: PeerMessageResponse::WalletState(WalletStateResponse {
                     uuid: data.uuid,
                     finalized_pegout_ids: data.finalized_pegout_ids,
+                    multisig_id: data.multisig_id,
                 }),
                 peer_id: this.peer_id,
             },
@@ -670,6 +675,7 @@ mod tests {
             version: 1,
             uuid: "uuid-1".to_string(),
             finalized_pegout_ids: vec![1, 2, 3],
+            multisig_id: 42,
         };
 
         // Send wire messages to the connection that create events for the manager
