@@ -2,12 +2,12 @@
 use core::fmt;
 use std::str::FromStr;
 
+use alloy_primitives::bytes::{Buf, BufMut, BytesMut};
 use reth_eth_wire::{protocol::Protocol, Capability};
 use reth_network_peers::PeerId;
-use alloy_primitives::bytes::{Buf, BufMut, BytesMut};
 
 const MESSAGE_VERSION: usize = 0;
-const WALLET_STATE_MESSAGE_VERSION: usize = 0;
+const LEGACY_MULTISIG_ID: u32 = 0;
 
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -238,6 +238,8 @@ impl FrostProtoMessage {
         buf.put_u8(self.message_type as u8);
         match &self.message {
             FrostProtoMessageKind::Dkg(resource) => {
+                // version
+                buf.put_u16_le(resource.version);
                 // sender
                 buf.put_u8(resource.sender.len() as u8);
                 buf.put_slice(&resource.sender);
@@ -249,25 +251,31 @@ impl FrostProtoMessage {
                 // data
                 buf.put_u32_le(resource.data.len() as u32);
                 buf.put_slice(&resource.data);
+                // version
+                buf.put_u16_le(resource.version);
             }
             FrostProtoMessageKind::Ping | FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id) |
-            FrostProtoMessageKind::PongMessage(peer_id) => {
+            FrostProtoMessageKind::PingMessage(peer_id)
+            | FrostProtoMessageKind::PongMessage(peer_id) => {
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16);
                 buf.put_slice(peer_id_bytes);
             }
-            FrostProtoMessageKind::SignerRound1SigningPackage(resource) |
-            FrostProtoMessageKind::SignerRound2SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
+            FrostProtoMessageKind::SignerRound1SigningPackage(resource)
+            | FrostProtoMessageKind::SignerRound2SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // signing session id
                 buf.put_u32_le(resource.signing_session_id.len() as u32);
                 buf.put_slice(&resource.signing_session_id);
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32);
                 buf.put_slice(&resource.psbt);
+                // version
+                buf.put_u16_le(resource.version);
+                // multisig_id
+                buf.put_u32_le(resource.multisig_id);
             }
             FrostProtoMessageKind::WalletState(resource) => {
                 // uuid
@@ -278,6 +286,8 @@ impl FrostProtoMessage {
                 // finalized_pegout_ids
                 buf.put_u32_le(resource.finalized_pegout_ids.len() as u32);
                 buf.put_slice(&resource.finalized_pegout_ids);
+                // multisig_id
+                buf.put_u32_le(resource.multisig_id);
             }
         }
         buf
@@ -312,6 +322,13 @@ impl FrostProtoMessage {
         // Decode message based on type
         let message = match message_type {
             FrostProtoMessageId::Dkg => {
+                // version
+                if buf.len() < 2 {
+                    return None;
+                }
+                let version = u16::from_le_bytes(buf[..2].try_into().ok()?);
+                buf.advance(2);
+
                 // sender_len
                 if buf.is_empty() {
                     return None;
@@ -361,7 +378,13 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient, multisig_id))
+                FrostProtoMessageKind::Dkg(DkgRequest {
+                    version,
+                    data,
+                    sender,
+                    recipient,
+                    multisig_id,
+                })
             }
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
@@ -389,10 +412,10 @@ impl FrostProtoMessage {
                 }
             }
 
-            FrostProtoMessageId::SignerRound1SigningPackage |
-            FrostProtoMessageId::CoordinatorRound1SigningPackage |
-            FrostProtoMessageId::SignerRound2SigningPackage |
-            FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+            FrostProtoMessageId::SignerRound1SigningPackage
+            | FrostProtoMessageId::CoordinatorRound1SigningPackage
+            | FrostProtoMessageId::SignerRound2SigningPackage
+            | FrostProtoMessageId::CoordinatorRound2SigningPackage => {
                 // session_id_len
                 if buf.len() < 4 {
                     return None;
@@ -421,7 +444,28 @@ impl FrostProtoMessage {
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
-                let sign_request = SignRequest::new(signing_session_id, psbt);
+                // Set default values (backwards compatibility)
+                let mut version = MESSAGE_VERSION as u16;
+                let mut multisig_id = LEGACY_MULTISIG_ID;
+
+                // version (if present)
+                if buf.len() >= 2 {
+                    version = u16::from_le_bytes(buf[..2].try_into().ok()?);
+                    buf.advance(2);
+                }
+
+                // multisig_id (if present)
+                if buf.len() >= 4 {
+                    multisig_id = u32::from_le_bytes(buf[..4].try_into().ok()?);
+                    buf.advance(4);
+                }
+
+                let sign_request = SignRequest{
+                    version,
+                    signing_session_id,
+                    psbt,
+                    multisig_id
+                };
 
                 match message_type {
                     FrostProtoMessageId::SignerRound1SigningPackage => {
@@ -476,10 +520,20 @@ impl FrostProtoMessage {
                 let finalized_pegout_ids = buf[..finalized_pegout_ids_len].to_vec();
                 buf.advance(finalized_pegout_ids_len);
 
+                // Set default values (backwards compatibility)
+                let mut multisig_id = LEGACY_MULTISIG_ID;
+
+                // multisig_id (if present)
+                if buf.len() >= 4 {
+                    multisig_id = u32::from_le_bytes(buf[..4].try_into().ok()?);
+                    buf.advance(4);
+                }
+
                 FrostProtoMessageKind::WalletState(WalletStateRequest {
                     uuid,
                     version,
                     finalized_pegout_ids,
+                    multisig_id,
                 })
             }
         };
