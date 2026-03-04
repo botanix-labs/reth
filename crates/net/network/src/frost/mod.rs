@@ -47,7 +47,7 @@ pub struct DkgResponse {
     pub sender: Vec<u8>,
     /// Frost Recipient to whom the message should be sent
     pub recipient: Vec<u8>,
-    /// Multisig Id for which the DKG message is intended
+    /// Multisig Id for which the message is intended
     pub multisig_id: u32,
 }
 
@@ -55,7 +55,7 @@ impl fmt::Display for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {:?}",
+            "Dkg response, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {}",
             self.data.len(),
             self.sender,
             self.recipient,
@@ -68,7 +68,7 @@ impl fmt::Debug for DkgResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Dkg message, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {:?}",
+            "Dkg response, Data Size: {} bytes, Sender: {:?}, Recipient: {:?}, Multisig Id: {}",
             self.data.len(),
             self.sender,
             self.recipient,
@@ -96,16 +96,18 @@ pub struct WalletStateResponse {
     pub uuid: String,
     /// Serialized and compressed pegout ids data
     pub finalized_pegout_ids: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl fmt::Display for WalletStateResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "WalletStateResponse:\n\
-            - Finalized Pegout Ids: {} bytes, uuid = {}",
+            "Wallet state message, Finalized Pegout Ids: {} bytes, UUID: {}, Multisig Id: {}",
             self.finalized_pegout_ids.len(),
-            &self.uuid
+            self.uuid,
+            self.multisig_id,
         )
     }
 }
@@ -119,16 +121,19 @@ pub struct SigningResponse {
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl fmt::Display for SigningResponse {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} - bytes, Session ID Size: {} bytes, PSBT Size: {} bytes",
+            "Signing response, Response Type: {}, Session ID Size: {} bytes, PSBT Size: {} bytes, Multisig Id = {}",
             self.response_type,
             self.signing_session_id.len(),
-            self.psbt.len()
+            self.psbt.len(),
+            self.multisig_id,
         )
     }
 }
