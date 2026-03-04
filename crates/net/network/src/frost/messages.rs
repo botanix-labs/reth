@@ -542,17 +542,22 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::WalletStateRequest;
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
+        WalletStateRequest, LEGACY_MULTISIG_ID, MESSAGE_VERSION,
     };
     use reth_network_peers::PeerId;
     use std::str::FromStr;
 
     #[test]
     fn test_dkg_encoding_decoding() {
-        let dkg_request =
-            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5], 42);
+        let dkg_request = DkgRequest {
+            version: 1,
+            data: vec![1, 2, 3, 4],
+            sender: vec![5, 6, 7, 8, 9],
+            recipient: vec![9, 8, 7, 6, 5],
+            multisig_id: 42,
+        };
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Dkg,
@@ -569,16 +574,16 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
-        
-        // Verify multisig_id specifically
-        if let FrostProtoMessageKind::Dkg(decoded_dkg) = decoded_message.message {
-            assert_eq!(decoded_dkg.multisig_id, 42);
-        }
     }
 
     #[test]
     fn test_signing_encoding_decoding() {
-        let signing_request = SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
+        let signing_request = SignRequest {
+            version: 1,
+            signing_session_id: vec![5, 6, 7, 8, 9],
+            psbt: vec![0, 1, 0, 1, 0],
+            multisig_id: 42,
+        };
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::SignerRound1SigningPackage,
@@ -592,6 +597,7 @@ mod tests {
         let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode message");
+
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
     }
@@ -613,12 +619,8 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode PingMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PingMessage(decoded_peer_id) = decoded_message.message {
-            assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
-        } else {
-            panic!("Decoded message is not a PingMessage");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 
     #[test]
@@ -638,25 +640,22 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode PongMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PongMessage(decoded_peer_id) = decoded_message.message {
-            assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
-        } else {
-            panic!("Decoded message is not a PongMessage");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 
     #[test]
     fn test_wallet_state_encode_decode() {
-        let uuid = "550e8400-e29b-41d4-a716-446655440000".to_string();
-        let finalized_pegout_ids = vec![1, 2, 3];
+        let wallet_sync_request = WalletStateRequest {
+            version: 1,
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            finalized_pegout_ids: vec![1, 2, 3],
+            multisig_id: 42,
+        };
+
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::WalletState,
-            message: FrostProtoMessageKind::WalletState(WalletStateRequest {
-                uuid,
-                version: 1,
-                finalized_pegout_ids: finalized_pegout_ids.clone(),
-            }),
+            message: FrostProtoMessageKind::WalletState(wallet_sync_request),
         };
 
         // Encode the message
