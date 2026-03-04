@@ -3,7 +3,7 @@
 use std::fmt::Debug;
 
 use crate::{
-    eth_requests::EthRequestHandler, frost::manager::{FrostConfig, FrostManager}, transactions::{
+    eth_requests::EthRequestHandler, frost::manager::FrostManager, transactions::{
         config::{StrictEthAnnouncementFilter, TransactionPropagationKind},
         policy::NetworkPolicies,
         TransactionPropagationPolicy, TransactionsManager, TransactionsManagerConfig,
@@ -58,19 +58,20 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
         (handle, network, transactions, request_handler, frost_manager)
     }
 
-    /// Creates a new [`FrostManager`] and wires it to the network.
-    pub fn frost(self, frost_config: Option<FrostConfig>) -> Self {
-        if frost_config.is_none() {
-            self
-        } else {
-            let Self { mut network, request_handler, transactions, .. } = self;
-            let (tx, rx) = mpsc::unbounded_channel();
-            network.set_frost_manager(tx);
-            let handle = network.handle().clone();
-            let frost_manager =
-                FrostManager::new(frost_config.expect("frost config exists"), handle, rx);
-            Self { network, request_handler, transactions, frost_manager: Some(frost_manager) }
+    /// Creates a new [`FrostManager`] and wires it to the network, unless the
+    /// authorities list is empty.
+    pub fn frost(self, authorities: Vec<secp256k1::PublicKey>) -> Self {
+        if authorities.is_empty() {
+            return self;
         }
+
+        let Self { mut network, request_handler, transactions, .. } = self;
+        let (tx, rx) = mpsc::unbounded_channel();
+        network.set_frost_manager(tx);
+        let handle = network.handle().clone();
+        let frost_manager =
+            FrostManager::new(authorities, handle, rx);
+        Self { network, request_handler, transactions, frost_manager: Some(frost_manager) }
     }
 
     /// Creates a new [`EthRequestHandler`] and wires it to the network.
