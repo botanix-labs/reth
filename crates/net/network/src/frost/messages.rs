@@ -2,25 +2,25 @@
 use core::fmt;
 use std::str::FromStr;
 
+use alloy_primitives::bytes::{Buf, BufMut, BytesMut};
 use reth_eth_wire::{protocol::Protocol, Capability};
 use reth_network_peers::PeerId;
-use alloy_primitives::bytes::{Buf, BufMut, BytesMut};
 
 const MESSAGE_VERSION: usize = 0;
-const WALLET_STATE_MESSAGE_VERSION: usize = 0;
+const LEGACY_MULTISIG_ID: u32 = 0;
 
 /// A structured frost DKG message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DkgRequest {
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
-    /// Frost data
-    pub data: Vec<u8>,
     /// Frost sender
     pub sender: Vec<u8>,
     /// Frost recipient
     pub recipient: Vec<u8>,
-    /// Multisig Id for which the DKG message is intended
+    /// Frost data
+    pub data: Vec<u8>,
+    /// Multisig Id for which the message is intended
     pub multisig_id: u32,
 }
 
@@ -34,19 +34,21 @@ impl DkgRequest {
 /// A structured frost sign message
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SignRequest {
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
     /// Signing session id
     pub signing_session_id: Vec<u8>,
     /// Frost data
     pub psbt: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl SignRequest {
     /// Constructs a new sign Request using a frost identifier, signing session id and a psbt
     /// payload.
-    pub const fn new(signing_session_id: Vec<u8>, psbt: Vec<u8>) -> Self {
-        Self { version: MESSAGE_VERSION as u16, signing_session_id, psbt }
+    pub const fn new(signing_session_id: Vec<u8>, psbt: Vec<u8>, multisig_id: u32) -> Self {
+        Self { version: MESSAGE_VERSION as u16, signing_session_id, psbt, multisig_id }
     }
 }
 
@@ -55,10 +57,12 @@ impl SignRequest {
 pub struct WalletStateRequest {
     /// uuid of the wallet state sync request
     pub uuid: String,
-    /// The version of the request message
+    /// The version of the message
     pub version: u16,
     /// finalized pegout ids
     pub finalized_pegout_ids: Vec<u8>,
+    /// Multisig Id for which the message is intended
+    pub multisig_id: u32,
 }
 
 impl fmt::Display for WalletStateRequest {
@@ -74,11 +78,12 @@ impl fmt::Display for WalletStateRequest {
 
 impl WalletStateRequest {
     /// Constructs a new wallet state request using a data payload.
-    pub fn new(uuid: &str, finalized_pegout_ids: Vec<u8>) -> Self {
+    pub fn new(uuid: String, finalized_pegout_ids: Vec<u8>, multisig_id: u32) -> Self {
         Self {
-            version: WALLET_STATE_MESSAGE_VERSION as u16,
+            version: MESSAGE_VERSION as u16,
             finalized_pegout_ids,
-            uuid: uuid.to_string(),
+            uuid,
+            multisig_id,
         }
     }
 }
@@ -233,6 +238,8 @@ impl FrostProtoMessage {
         buf.put_u8(self.message_type as u8);
         match &self.message {
             FrostProtoMessageKind::Dkg(resource) => {
+                // version
+                buf.put_u16_le(resource.version);
                 // sender
                 buf.put_u8(resource.sender.len() as u8);
                 buf.put_slice(&resource.sender);
@@ -246,23 +253,27 @@ impl FrostProtoMessage {
                 buf.put_slice(&resource.data);
             }
             FrostProtoMessageKind::Ping | FrostProtoMessageKind::Pong => {}
-            FrostProtoMessageKind::PingMessage(peer_id) |
-            FrostProtoMessageKind::PongMessage(peer_id) => {
+            FrostProtoMessageKind::PingMessage(peer_id)
+            | FrostProtoMessageKind::PongMessage(peer_id) => {
                 let peer_id_str = peer_id.to_string();
                 let peer_id_bytes = peer_id_str.as_bytes();
                 buf.put_u16_le(peer_id_bytes.len() as u16);
                 buf.put_slice(peer_id_bytes);
             }
-            FrostProtoMessageKind::SignerRound1SigningPackage(resource) |
-            FrostProtoMessageKind::SignerRound2SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource) |
-            FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
+            FrostProtoMessageKind::SignerRound1SigningPackage(resource)
+            | FrostProtoMessageKind::SignerRound2SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound1SigningPackage(resource)
+            | FrostProtoMessageKind::CoordinatorRound2SigningPackage(resource) => {
                 // signing session id
                 buf.put_u32_le(resource.signing_session_id.len() as u32);
                 buf.put_slice(&resource.signing_session_id);
                 // psbt
                 buf.put_u32_le(resource.psbt.len() as u32);
                 buf.put_slice(&resource.psbt);
+                // version
+                buf.put_u16_le(resource.version);
+                // multisig_id
+                buf.put_u32_le(resource.multisig_id);
             }
             FrostProtoMessageKind::WalletState(resource) => {
                 // uuid
@@ -273,6 +284,8 @@ impl FrostProtoMessage {
                 // finalized_pegout_ids
                 buf.put_u32_le(resource.finalized_pegout_ids.len() as u32);
                 buf.put_slice(&resource.finalized_pegout_ids);
+                // multisig_id
+                buf.put_u32_le(resource.multisig_id);
             }
         }
         buf
@@ -307,6 +320,13 @@ impl FrostProtoMessage {
         // Decode message based on type
         let message = match message_type {
             FrostProtoMessageId::Dkg => {
+                // version
+                if buf.len() < 2 {
+                    return None;
+                }
+                let version = u16::from_le_bytes(buf[..2].try_into().ok()?);
+                buf.advance(2);
+
                 // sender_len
                 if buf.is_empty() {
                     return None;
@@ -356,7 +376,13 @@ impl FrostProtoMessage {
                 let data = buf[..data_len].to_vec();
                 buf.advance(data_len);
 
-                FrostProtoMessageKind::Dkg(DkgRequest::new(data, sender, recipient, multisig_id))
+                FrostProtoMessageKind::Dkg(DkgRequest {
+                    version,
+                    data,
+                    sender,
+                    recipient,
+                    multisig_id,
+                })
             }
             FrostProtoMessageId::Ping => FrostProtoMessageKind::Ping,
             FrostProtoMessageId::Pong => FrostProtoMessageKind::Pong,
@@ -384,10 +410,10 @@ impl FrostProtoMessage {
                 }
             }
 
-            FrostProtoMessageId::SignerRound1SigningPackage |
-            FrostProtoMessageId::CoordinatorRound1SigningPackage |
-            FrostProtoMessageId::SignerRound2SigningPackage |
-            FrostProtoMessageId::CoordinatorRound2SigningPackage => {
+            FrostProtoMessageId::SignerRound1SigningPackage
+            | FrostProtoMessageId::CoordinatorRound1SigningPackage
+            | FrostProtoMessageId::SignerRound2SigningPackage
+            | FrostProtoMessageId::CoordinatorRound2SigningPackage => {
                 // session_id_len
                 if buf.len() < 4 {
                     return None;
@@ -416,7 +442,28 @@ impl FrostProtoMessage {
                 let psbt = buf[..psbt_len].to_vec();
                 buf.advance(psbt_len);
 
-                let sign_request = SignRequest::new(signing_session_id, psbt);
+                // Set default values (backwards compatibility)
+                let mut version = MESSAGE_VERSION as u16;
+                let mut multisig_id = LEGACY_MULTISIG_ID;
+
+                // version (if present)
+                if buf.len() >= 2 {
+                    version = u16::from_le_bytes(buf[..2].try_into().ok()?);
+                    buf.advance(2);
+                }
+
+                // multisig_id (if present)
+                if buf.len() >= 4 {
+                    multisig_id = u32::from_le_bytes(buf[..4].try_into().ok()?);
+                    buf.advance(4);
+                }
+
+                let sign_request = SignRequest{
+                    version,
+                    signing_session_id,
+                    psbt,
+                    multisig_id
+                };
 
                 match message_type {
                     FrostProtoMessageId::SignerRound1SigningPackage => {
@@ -471,10 +518,20 @@ impl FrostProtoMessage {
                 let finalized_pegout_ids = buf[..finalized_pegout_ids_len].to_vec();
                 buf.advance(finalized_pegout_ids_len);
 
+                // Set default values (backwards compatibility)
+                let mut multisig_id = LEGACY_MULTISIG_ID;
+
+                // multisig_id (if present)
+                if buf.len() >= 4 {
+                    multisig_id = u32::from_le_bytes(buf[..4].try_into().ok()?);
+                    buf.advance(4);
+                }
+
                 FrostProtoMessageKind::WalletState(WalletStateRequest {
                     uuid,
                     version,
                     finalized_pegout_ids,
+                    multisig_id,
                 })
             }
         };
@@ -485,17 +542,22 @@ impl FrostProtoMessage {
 
 #[cfg(test)]
 mod tests {
-    use super::WalletStateRequest;
     use super::{
         DkgRequest, FrostProtoMessage, FrostProtoMessageId, FrostProtoMessageKind, SignRequest,
+        WalletStateRequest, LEGACY_MULTISIG_ID, MESSAGE_VERSION,
     };
     use reth_network_peers::PeerId;
     use std::str::FromStr;
 
     #[test]
     fn test_dkg_encoding_decoding() {
-        let dkg_request =
-            DkgRequest::new(vec![1, 2, 3, 4], vec![5, 6, 7, 8, 9], vec![9, 8, 7, 6, 5], 42);
+        let dkg_request = DkgRequest {
+            version: 1,
+            data: vec![1, 2, 3, 4],
+            sender: vec![5, 6, 7, 8, 9],
+            recipient: vec![9, 8, 7, 6, 5],
+            multisig_id: 42,
+        };
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::Dkg,
@@ -512,16 +574,16 @@ mod tests {
 
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
-        
-        // Verify multisig_id specifically
-        if let FrostProtoMessageKind::Dkg(decoded_dkg) = decoded_message.message {
-            assert_eq!(decoded_dkg.multisig_id, 42);
-        }
     }
 
     #[test]
     fn test_signing_encoding_decoding() {
-        let signing_request = SignRequest::new(vec![5, 6, 7, 8, 9], vec![0, 1, 0, 1, 0]);
+        let signing_request = SignRequest {
+            version: 1,
+            signing_session_id: vec![5, 6, 7, 8, 9],
+            psbt: vec![0, 1, 0, 1, 0],
+            multisig_id: 42,
+        };
 
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::SignerRound1SigningPackage,
@@ -535,6 +597,7 @@ mod tests {
         let mut encoded_bytes_slice: &[u8] = &encoded_bytes;
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode message");
+
         // Check that the decoded message matches the original message
         assert_eq!(decoded_message, message);
     }
@@ -556,12 +619,8 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode PingMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PingMessage(decoded_peer_id) = decoded_message.message {
-            assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
-        } else {
-            panic!("Decoded message is not a PingMessage");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 
     #[test]
@@ -581,25 +640,22 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode PongMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::PongMessage(decoded_peer_id) = decoded_message.message {
-            assert_eq!(decoded_peer_id, peer_id, "PeerId does not match");
-        } else {
-            panic!("Decoded message is not a PongMessage");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 
     #[test]
     fn test_wallet_state_encode_decode() {
-        let uuid = "550e8400-e29b-41d4-a716-446655440000".to_string();
-        let finalized_pegout_ids = vec![1, 2, 3];
+        let wallet_sync_request = WalletStateRequest {
+            version: 1,
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            finalized_pegout_ids: vec![1, 2, 3],
+            multisig_id: 42,
+        };
+
         let message = FrostProtoMessage {
             message_type: FrostProtoMessageId::WalletState,
-            message: FrostProtoMessageKind::WalletState(WalletStateRequest {
-                uuid,
-                version: 1,
-                finalized_pegout_ids: finalized_pegout_ids.clone(),
-            }),
+            message: FrostProtoMessageKind::WalletState(wallet_sync_request),
         };
 
         // Encode the message
@@ -610,24 +666,71 @@ mod tests {
         let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
             .expect("Failed to decode WalletStateMessage");
 
-        // Verify that the decoded message matches the original message
-        if let FrostProtoMessageKind::WalletState(wallet_state_request) = decoded_message.message {
-            assert_eq!(
-                wallet_state_request.uuid, "550e8400-e29b-41d4-a716-446655440000",
-                "uuid does not match"
-            );
-            assert_eq!(wallet_state_request.version, 1, "version does not match");
-            assert_eq!(
-                wallet_state_request.finalized_pegout_ids.len(),
-                finalized_pegout_ids.len(),
-                "finalized_pegout_ids length does not match"
-            );
-            assert_eq!(
-                wallet_state_request.finalized_pegout_ids, finalized_pegout_ids,
-                "pegout id does not match"
-            );
-        } else {
-            panic!("Decoded message is not a WalletState Message");
-        }
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_signing_decoding_backwards_compatibility() {
+        // Legacy bytes generated without version or multisig id
+        const LEGACY_BYTES: &[u8] = &[6, 5, 0, 0, 0, 5, 6, 7, 8, 9, 5, 0, 0, 0, 0, 1, 0, 1, 0];
+
+        let signing_request = SignRequest {
+            // Default value when missing
+            version: MESSAGE_VERSION as u16,
+            signing_session_id: vec![5, 6, 7, 8, 9],
+            psbt: vec![0, 1, 0, 1, 0],
+            // Default value when missing
+            multisig_id: LEGACY_MULTISIG_ID,
+        };
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::SignerRound1SigningPackage,
+            message: FrostProtoMessageKind::SignerRound1SigningPackage(signing_request),
+        };
+
+        // Simulate receiving the encoded legacy bytes that do not include the
+        // version or multisig id, and decoding them
+        let mut encoded_bytes_slice: &[u8] = &LEGACY_BYTES;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode message");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
+    }
+
+    #[test]
+    fn test_wallet_state_decoding_backwards_compatibility() {
+        // Legacy bytes generated without multisig id
+        const LEGACY_BYTES: &[u8] = &[
+            11, 36, 0, 0, 0, 53, 53, 48, 101, 56, 52, 48, 48, 45, 101, 50, 57, 98, 45, 52, 49, 100,
+            52, 45, 97, 55, 49, 54, 45, 52, 52, 54, 54, 53, 53, 52, 52, 48, 48, 48, 48, 1, 0, 3, 0,
+            0, 0, 1, 2, 3,
+        ];
+
+        let wallet_sync_request = WalletStateRequest {
+            version: 1,
+            uuid: "550e8400-e29b-41d4-a716-446655440000".to_string(),
+            finalized_pegout_ids: vec![1, 2, 3],
+            // Default value when missing
+            multisig_id: LEGACY_MULTISIG_ID,
+        };
+
+        // The default value that is used when the multisig id is missing
+        assert_eq!(wallet_sync_request.multisig_id, LEGACY_MULTISIG_ID);
+
+        let message = FrostProtoMessage {
+            message_type: FrostProtoMessageId::WalletState,
+            message: FrostProtoMessageKind::WalletState(wallet_sync_request),
+        };
+
+        // Simulate receiving the encoded legacy bytes that do not include the
+        // multisig id, and decoding them
+        let mut encoded_bytes_slice: &[u8] = &LEGACY_BYTES;
+        let decoded_message = FrostProtoMessage::decode_message(&mut encoded_bytes_slice)
+            .expect("Failed to decode WalletStateMessage");
+
+        // Check that the decoded message matches the original message
+        assert_eq!(decoded_message, message);
     }
 }

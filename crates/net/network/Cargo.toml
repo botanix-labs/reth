@@ -53,7 +53,7 @@ tokio-stream.workspace = true
 tokio-util = { workspace = true, features = ["codec"] }
 
 # io
-serde = { workspace = true, optional = true }
+serde.workspace = true
 
 # metrics
 reth-metrics = { workspace = true, features = ["common"] }
@@ -107,7 +107,6 @@ criterion = { workspace = true, features = ["async_tokio", "html_reports"] }
 
 [features]
 serde = [
-    "dep:serde",
     "secp256k1/serde",
     "enr/serde",
     "reth-network-types/serde",
