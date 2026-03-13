@@ -114,7 +114,7 @@ pub struct FrostManager<N: NetworkPrimitives> {
 impl<N: NetworkPrimitives> FrostManager<N> {
     /// Create a new [`FrostManager`] instance with the given config
     pub fn new(
-        authorities: Vec<secp256k1::PublicKey>,
+        authorities: HashMap<frost::Identifier, secp256k1::PublicKey>,
         network: NetworkHandle<N>,
         from_network: mpsc::UnboundedReceiver<FrostProtocolEvent>,
     ) -> Self {
@@ -123,9 +123,7 @@ impl<N: NetworkPrimitives> FrostManager<N> {
         // connection trackers.
         let authorities = authorities
             .iter()
-            .enumerate()
-            .map(|(index, pk)| {
-                let frost_identifier = authority_index_to_frost_identifier(index as u16);
+            .map(|(&frost_identifier, pk)| {
                 let peer_id = PeerId::from_slice(&pk.serialize_uncompressed()[1..]);
                 let authority = AuthorityContext { connections: HashSet::new(), frost_identifier };
 
@@ -530,13 +528,4 @@ pub enum FrostCommand {
     GetPeerMessagesStream(oneshot::Sender<mpsc::UnboundedReceiver<PeerMessageContext>>),
     /// Get pending pegouts state from peer
     GetWalletStateFromPeer((uuid::Uuid, u32)),
-}
-
-// TODO(armins): import btcserverlib::frost_id and use on the callers
-/// Maps an authority index to a frost specific identifier
-/// Indices start at 0, so we add 1 to the index to get the correct identifier
-/// As 0 is not a valid identifier
-pub fn authority_index_to_frost_identifier(authority_index: u16) -> frost::Identifier {
-    frost::Identifier::derive(authority_index.to_le_bytes().as_slice())
-        .expect("can derive identifier")
 }
