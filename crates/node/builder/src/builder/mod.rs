@@ -10,13 +10,16 @@ use crate::{
     BlockReaderFor, DebugNode, DebugNodeLauncher, EngineNodeLauncher, LaunchNode, Node,
 };
 use alloy_eips::eip4844::env_settings::EnvKzgSettings;
+use frost_secp256k1_tr as frost;
 use futures::Future;
 use reth_chainspec::{EthChainSpec, EthereumHardforks, Hardforks};
 use reth_cli_util::get_secret_key;
 use reth_db_api::{database::Database, database_metrics::DatabaseMetrics};
 use reth_exex::ExExContext;
 use reth_network::{
-    transactions::{TransactionPropagationPolicy, TransactionsManagerConfig}, NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager, NetworkPrimitives
+    transactions::{TransactionPropagationPolicy, TransactionsManagerConfig},
+    NetworkBuilder, NetworkConfig, NetworkConfigBuilder, NetworkHandle, NetworkManager,
+    NetworkPrimitives,
 };
 use reth_node_api::{
     FullNodePrimitives, FullNodeTypes, FullNodeTypesAdapter, NodeAddOns, NodeTypes,
@@ -35,7 +38,7 @@ use reth_provider::{
 use reth_tasks::TaskExecutor;
 use reth_transaction_pool::{PoolConfig, PoolTransaction, TransactionPool};
 use secp256k1::SecretKey;
-use std::{fmt::Debug, sync::Arc};
+use std::{collections::HashMap, fmt::Debug, sync::Arc};
 use tracing::{info, trace, warn};
 
 pub mod add_ons;
@@ -781,7 +784,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         &self,
         builder: NetworkBuilder<(), (), N>,
         pool: Pool,
-        frost_authorities: Vec<secp256k1::PublicKey>,
+        frost_authorities: HashMap<frost::Identifier, secp256k1::PublicKey>,
     ) -> NetworkHandle<N>
     where
         N: NetworkPrimitives,
@@ -815,7 +818,7 @@ impl<Node: FullNodeTypes> BuilderContext<Node> {
         pool: Pool,
         tx_config: TransactionsManagerConfig,
         propagation_policy: Policy,
-        frost_authorities: Vec<secp256k1::PublicKey>,
+        frost_authorities: HashMap<frost::Identifier, secp256k1::PublicKey>,
     ) -> NetworkHandle<N>
     where
         N: NetworkPrimitives,

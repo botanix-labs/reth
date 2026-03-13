@@ -65,7 +65,7 @@ use reth_transaction_pool::{
 };
 use reth_trie_db::MerklePatriciaTrie;
 use serde::de::DeserializeOwned;
-use std::{marker::PhantomData, sync::Arc};
+use std::{collections::HashMap, marker::PhantomData, sync::Arc};
 
 /// Marker trait for Optimism node types with standard engine, chain spec, and primitives.
 pub trait OpNodeTypes:
@@ -896,8 +896,8 @@ where
         let Self { pool_config_overrides, .. } = self;
 
         // supervisor used for interop
-        if ctx.chain_spec().is_interop_active_at_timestamp(ctx.head().timestamp) &&
-            self.supervisor_http == DEFAULT_SUPERVISOR_URL
+        if ctx.chain_spec().is_interop_active_at_timestamp(ctx.head().timestamp)
+            && self.supervisor_http == DEFAULT_SUPERVISOR_URL
         {
             info!(target: "reth::cli",
                 url=%DEFAULT_SUPERVISOR_URL,
@@ -942,8 +942,8 @@ where
         debug!(target: "reth::cli", "Spawned txpool maintenance task");
 
         // The Op txpool maintenance task is only spawned when interop is active
-        if ctx.chain_spec().is_interop_active_at_timestamp(ctx.head().timestamp) &&
-            self.supervisor_http == DEFAULT_SUPERVISOR_URL
+        if ctx.chain_spec().is_interop_active_at_timestamp(ctx.head().timestamp)
+            && self.supervisor_http == DEFAULT_SUPERVISOR_URL
         {
             // spawn the Op txpool maintenance task
             let chain_events = ctx.provider().canonical_state_stream();
@@ -1151,7 +1151,7 @@ where
     ) -> eyre::Result<Self::Network> {
         let network_config = self.network_config(ctx)?;
         let network = NetworkManager::builder(network_config).await?;
-        let handle = ctx.start_network(network, pool, vec![]);
+        let handle = ctx.start_network(network, pool, HashMap::default());
         info!(target: "reth::cli", enode=%handle.local_node_record(), "P2P networking initialized");
 
         Ok(handle)
