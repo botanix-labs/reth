@@ -1,6 +1,6 @@
 //! Builder support for configuring the entire setup.
 
-use std::fmt::Debug;
+use std::{collections::HashMap, fmt::Debug};
 
 use crate::{
     eth_requests::EthRequestHandler, frost::manager::FrostManager, transactions::{
@@ -9,6 +9,7 @@ use crate::{
         TransactionPropagationPolicy, TransactionsManager, TransactionsManagerConfig,
     }, NetworkHandle, NetworkManager
 };
+use frost_secp256k1_tr as frost;
 use reth_eth_wire::{EthNetworkPrimitives, NetworkPrimitives};
 use reth_network_api::test_utils::PeersHandleProvider;
 use reth_transaction_pool::TransactionPool;
@@ -60,7 +61,7 @@ impl<Tx, Eth, N: NetworkPrimitives> NetworkBuilder<Tx, Eth, N> {
 
     /// Creates a new [`FrostManager`] and wires it to the network, unless the
     /// authorities list is empty.
-    pub fn frost(self, authorities: Vec<secp256k1::PublicKey>) -> Self {
+    pub fn frost(self, authorities: HashMap<frost::Identifier, secp256k1::PublicKey>) -> Self {
         if authorities.is_empty() {
             return self;
         }

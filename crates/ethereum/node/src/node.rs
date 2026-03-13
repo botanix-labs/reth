@@ -55,7 +55,7 @@ use reth_transaction_pool::{
 };
 use reth_trie_db::MerklePatriciaTrie;
 use revm::context::TxEnv;
-use std::{default::Default, marker::PhantomData, sync::Arc, time::SystemTime};
+use std::{collections::HashMap, default::Default, marker::PhantomData, sync::Arc, time::SystemTime};
 
 /// Type configuration for a regular Ethereum node.
 #[derive(Debug, Default, Clone, Copy)]
@@ -518,7 +518,7 @@ where
         pool: Pool,
     ) -> eyre::Result<Self::Network> {
         let network = ctx.network_builder().await?;
-        let handle = ctx.start_network(network, pool, vec![]);
+        let handle = ctx.start_network(network, pool, HashMap::default());
         info!(target: "reth::cli", enode=%handle.local_node_record(), "P2P networking initialized");
         Ok(handle)
     }
